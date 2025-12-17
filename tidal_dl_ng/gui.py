@@ -46,6 +46,7 @@
 
 import math
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
@@ -163,6 +164,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Logging redirect.
         XStream.stdout().messageWritten.connect(self._log_output)
         # XStream.stderr().messageWritten.connect(self._log_output)
+
+        self.active_downloads: dict[str, threading.Event] = {}
 
         self.settings = Settings()
 
@@ -635,7 +638,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # Add "Download Full Album" option if it's a track or video with an album
         if isinstance(media, Track | Video) and hasattr(media, "album") and media.album:
-            menu.addAction("Download Full Album", lambda: self.thread_download_album_from_track(point))
+            menu.addAction("Download Full Album(s)", lambda: self.thread_download_album_from_track(point))
 
         menu.addAction("Copy Share URL", lambda: self.on_copy_url_share(self.tr_results, point))
 
@@ -656,10 +659,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # Build the menu
         menu = QtWidgets.QMenu()
 
-        # Show remove option for waiting items
-        status = item.text(0)
-        if status == QueueDownloadStatus.Waiting:
-            menu.addAction("🗑️ Remove from Queue", lambda: self.on_queue_download_remove_item(item))
+        # Check selection
+        selected_items = self.tr_queue_download.selectedItems()
+
+        # If the clicked item is part of a multi-selection, apply action to all selected items
+        if len(selected_items) > 1 and item in selected_items:
+            # Multi-selection Actions
+            menu.addAction(
+                f"🗑️ Remove {len(selected_items)} items", lambda: self.on_queue_download_remove_items(selected_items)
+            )
+        else:
+            # Single Item Actions
+            status = item.text(0)
+            if status == QueueDownloadStatus.Downloading:
+                menu.addAction("⏹️ Stop / Remove from Queue", lambda: self.on_queue_download_remove_items([item]))
+            else:
+                menu.addAction("🗑️ Remove from Queue", lambda: self.on_queue_download_remove_items([item]))
 
         if menu.isEmpty():
             return
@@ -672,10 +687,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         Args:
             item (QTreeWidgetItem): The item to remove.
         """
-        index = self.tr_queue_download.indexOfTopLevelItem(item)
-        if index >= 0:
-            self.tr_queue_download.takeTopLevelItem(index)
-            logger_gui.info("Removed item from download queue")
+        self.on_queue_download_remove_items([item])
 
     def thread_download_list_media(self, point: QtCore.QPoint) -> None:
         """Start download of a list media item in a thread.
@@ -2059,9 +2071,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def on_queue_download_clear_all(self) -> None:
         """Clear all items from the download queue."""
-        self.on_clear_queue_download(
-            f"({QueueDownloadStatus.Waiting}|{QueueDownloadStatus.Finished}|{QueueDownloadStatus.Failed})"
-        )
+        items = [self.tr_queue_download.topLevelItem(i) for i in range(self.tr_queue_download.topLevelItemCount())]
+        self.on_queue_download_remove_items(items)
 
     def on_queue_download_clear_finished(self) -> None:
         """Clear finished items from the download queue."""
@@ -2087,13 +2098,34 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if len(items) == 0:
             logger_gui.error("Please select an item from the queue first.")
         else:
-            for item in items:
-                status: str = item.text(0)
+            self.on_queue_download_remove_items(items)
 
-                if status != QueueDownloadStatus.Downloading:
-                    self.tr_queue_download.takeTopLevelItem(self.tr_queue_download.indexOfTopLevelItem(item))
-                else:
-                    logger_gui.info("Cannot remove a currently downloading item from queue.")
+    def on_queue_download_remove_items(self, items: list[QtWidgets.QTreeWidgetItem]) -> None:
+        """Remove multiple items from the download queue.
+
+        Args:
+            items (list[QtWidgets.QTreeWidgetItem]): List of items to remove.
+        """
+        for item in items:
+            status = item.text(0)
+            if status == QueueDownloadStatus.Downloading:
+                logger_gui.info("Stopping active download before removal.")
+                self.on_queue_download_stop_items([item])
+
+            if item.treeWidget() == self.tr_queue_download:
+                self.tr_queue_download.takeTopLevelItem(self.tr_queue_download.indexOfTopLevelItem(item))
+
+    def on_queue_download_stop_items(self, items: list[QtWidgets.QTreeWidgetItem]) -> None:
+        """Stop currently downloading items.
+
+        Args:
+            items (list[QtWidgets.QTreeWidgetItem]): List of items to stop.
+        """
+        for item in items:
+            item_id = str(id(item))
+            if item_id in self.active_downloads:
+                logger_gui.info(f"Signal stop for download: {item.text(2)}")
+                self.active_downloads[item_id].set()
 
     def on_pb_queue_download_toggle(self) -> None:
         """Toggle download status (pause / resume) accordingly.
@@ -2179,15 +2211,31 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
                 try:
                     self.s_queue_download_item_downloading.emit(item)
-                    result = self.on_queue_download(media, quality_audio=quality_audio, quality_video=quality_video)
+
+                    # Create cancellation event
+                    event_stop = threading.Event()
+                    item_id = str(id(item))
+                    self.active_downloads[item_id] = event_stop
+
+                    result = self.on_queue_download(
+                        media,
+                        quality_audio=quality_audio,
+                        quality_video=quality_video,
+                        event_stop=event_stop,
+                    )
 
                     if result == QueueDownloadStatus.Finished:
                         self.s_queue_download_item_finished.emit(item)
                     elif result == QueueDownloadStatus.Skipped:
                         self.s_queue_download_item_skipped.emit(item)
+
                 except Exception as e:
                     logger_gui.error(e)
                     self.s_queue_download_item_failed.emit(item)
+                finally:
+                    # Cleanup event
+                    if item_id in self.active_downloads:
+                        del self.active_downloads[item_id]
             else:
                 time.sleep(2)
 
@@ -2237,6 +2285,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         media: Track | Album | Playlist | Video | Mix | Artist,
         quality_audio: Quality | None = None,
         quality_video: QualityVideo | None = None,
+        event_stop: threading.Event | None = None,
     ) -> QueueDownloadStatus:
         """Download the specified media item(s) and return the result status.
 
@@ -2244,6 +2293,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             media (Track | Album | Playlist | Video | Mix | Artist): The media item(s) to download.
             quality_audio (Quality | None, optional): Desired audio quality. Defaults to None.
             quality_video (QualityVideo | None, optional): Desired video quality. Defaults to None.
+            event_stop (threading.Event | None, optional): Event to stop the download. Defaults to None.
 
         Returns:
             QueueDownloadStatus: The status of the download operation.
@@ -2265,6 +2315,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 delay_track=download_delay,
                 quality_audio=quality_audio,
                 quality_video=quality_video,
+                event_stop=event_stop,
             )
 
         return result
@@ -2276,6 +2327,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         delay_track: bool = False,
         quality_audio: Quality | None = None,
         quality_video: QualityVideo | None = None,
+        event_stop: threading.Event | None = None,
     ) -> QueueDownloadStatus:
         """Download a media item and return the result status.
 
@@ -2285,6 +2337,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             delay_track (bool, optional): Whether to apply download delay. Defaults to False.
             quality_audio (Quality | None, optional): Desired audio quality. Defaults to None.
             quality_video (QualityVideo | None, optional): Desired video quality. Defaults to None.
+            event_stop (threading.Event | None, optional): Event to stop the download. Defaults to None.
 
         Returns:
             QueueDownloadStatus: The status of the download operation.
@@ -2304,6 +2357,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 download_delay=delay_track,
                 quality_audio=quality_audio,
                 quality_video=quality_video,
+                event_stop=event_stop,
             )
         elif isinstance(media, Album | Playlist | Mix):
             dl.items(
@@ -2313,6 +2367,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 download_delay=self.settings.data.download_delay,
                 quality_audio=quality_audio,
                 quality_video=quality_video,
+                event_stop=event_stop,
             )
 
             # Dummy values
