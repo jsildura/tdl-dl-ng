@@ -141,14 +141,14 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "cachetools"
-version = "6.2.2"
+version = "6.2.4"
 description = "Extensible memoizing collections and decorators"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "cachetools-6.2.2-py3-none-any.whl", hash = "sha256:6c09c98183bf58560c97b2abfcedcbaf6a896a490f534b031b661d3723b45ace"},
-    {file = "cachetools-6.2.2.tar.gz", hash = "sha256:8e6d266b25e539df852251cfd6f990b4bc3a141db73b939058d809ebd2590fc6"},
+    {file = "cachetools-6.2.4-py3-none-any.whl", hash = "sha256:69a7a52634fed8b8bf6e24a050fb60bff1c9bd8f6d24572b99c32d4e71e62a51"},
+    {file = "cachetools-6.2.4.tar.gz", hash = "sha256:82c5c05585e70b6ba2d3ae09ea60b79548872185d2f24ae1f2709d37299fd607"},
 ]
 
 [[package]]
@@ -564,14 +564,14 @@ files = [
 
 [[package]]
 name = "filelock"
-version = "3.20.0"
+version = "3.20.1"
 description = "A platform independent file lock."
 optional = false
 python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "filelock-3.20.0-py3-none-any.whl", hash = "sha256:339b4732ffda5cd79b13f4e2711a31b0365ce445d95d243bb996273d072546a2"},
-    {file = "filelock-3.20.0.tar.gz", hash = "sha256:711e943b4ec6be42e1d4e6690b48dc175c822967466bb31c0c293f34334c13f4"},
+    {file = "filelock-3.20.1-py3-none-any.whl", hash = "sha256:15d9e9a67306188a44baa72f569d2bfd803076269365fdea0934385da4dc361a"},
+    {file = "filelock-3.20.1.tar.gz", hash = "sha256:b8360948b351b80f420878d8516519a2204b07aefcdcfd24912a5d33127f188c"},
 ]
 
 [[package]]
@@ -1360,14 +1360,14 @@ testing = ["coverage", "pytest", "pytest-benchmark"]
 
 [[package]]
 name = "pre-commit"
-version = "4.5.0"
+version = "4.5.1"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 optional = false
 python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "pre_commit-4.5.0-py2.py3-none-any.whl", hash = "sha256:25e2ce09595174d9c97860a95609f9f852c0614ba602de3561e267547f2335e1"},
-    {file = "pre_commit-4.5.0.tar.gz", hash = "sha256:dc5a065e932b19fc1d4c653c6939068fe54325af8e741e74e88db4d28a4dd66b"},
+    {file = "pre_commit-4.5.1-py2.py3-none-any.whl", hash = "sha256:3b3afd891e97337708c1674210f8eba659b52a38ea5f822ff142d10786221f77"},
+    {file = "pre_commit-4.5.1.tar.gz", hash = "sha256:eb545fcff725875197837263e977ea257a402056661f09dae08e4b149b030a61"},
 ]
 
 [package.dependencies]
@@ -1517,14 +1517,14 @@ testutils = ["gitpython (>3)"]
 
 [[package]]
 name = "pymdown-extensions"
-version = "10.19"
+version = "10.19.1"
 description = "Extension pack for Python Markdown."
 optional = false
 python-versions = ">=3.9"
 groups = ["docs"]
 files = [
-    {file = "pymdown_extensions-10.19-py3-none-any.whl", hash = "sha256:dc5f249fc3a1b6d8a6de4634ba8336b88d0942cee75e92b18ac79eaf3503bf7c"},
-    {file = "pymdown_extensions-10.19.tar.gz", hash = "sha256:01bb917ea231f9ce14456fa9092cdb95ac3e5bd32202a3ee61dbd5ad2dd9ef9b"},
+    {file = "pymdown_extensions-10.19.1-py3-none-any.whl", hash = "sha256:e8698a66055b1dc0dca2a7f2c9d0ea6f5faa7834a9c432e3535ab96c0c4e509b"},
+    {file = "pymdown_extensions-10.19.1.tar.gz", hash = "sha256:4969c691009a389fb1f9712dd8e7bd70dcc418d15a0faf70acb5117d022f7de8"},
 ]
 
 [package.dependencies]
@@ -2003,25 +2003,21 @@ name = "tidalapi"
 version = "0.8.10"
 description = "Unofficial API for TIDAL music streaming service."
 optional = false
-python-versions = "^3.8"
+python-versions = "<4.0,>=3.8"
 groups = ["main"]
-files = []
-develop = false
+files = [
+    {file = "tidalapi-0.8.10-py3-none-any.whl", hash = "sha256:2f04f1a28a41a9e917c81607259a016a64232b61e0b9a5e388d3f16ce2817f78"},
+    {file = "tidalapi-0.8.10.tar.gz", hash = "sha256:f5b7d6ab19cfd40907941200a91d491f16d1b68b0323af9b0660bb739e0aab80"},
+]
 
 [package.dependencies]
-isodate = "^0.7.2"
-mpegdash = "^0.4.0"
-pyaes = "^1.6.1"
-python-dateutil = "^2.8.2"
-ratelimit = "^2.2.1"
-requests = "^2.32.3"
-typing-extensions = "^4.12.2"
-
-[package.source]
-type = "git"
-url = "https://github.com/EbbLabs/python-tidal.git"
-reference = "main"
-resolved_reference = "dd803f86407896cc1be3b3d472811eb9f25965bf"
+isodate = ">=0.7.2,<0.8.0"
+mpegdash = ">=0.4.0,<0.5.0"
+pyaes = ">=1.6.1,<2.0.0"
+python-dateutil = ">=2.8.2,<3.0.0"
+ratelimit = ">=2.2.1,<3.0.0"
+requests = ">=2.32.3,<3.0.0"
+typing-extensions = ">=4.12.2,<5.0.0"
 
 [[package]]
 name = "tokenize-rt"
@@ -2328,4 +2324,4 @@ gui = ["pyqtdarktheme-fork", "pyside6"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "27f6d2a145f87dd9fbd6bb0e3052987930582a1fcfc5f9865502249adb4aec17"
+content-hash = "cafddda162a6de5f1179e5fcb88ebcb83a60db194da7afedc4461a53f1850aa2"
