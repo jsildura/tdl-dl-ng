@@ -206,14 +206,13 @@ def _process_url(
     return True
 
 
-def _download(ctx: typer.Context, urls: list[str], try_login: bool = True, debug: bool = False) -> bool:
+def _download(ctx: typer.Context, urls: list[str], try_login: bool = True) -> bool:
     """Invokes download function and tracks progress.
 
     Args:
         ctx (typer.Context): The typer context object.
         urls (list[str]): The list of URLs to download.
         try_login (bool, optional): If true, attempts to login to TIDAL. Defaults to True.
-        debug (bool, optional): If true, enables debug output with full tracebacks. Defaults to False.
 
     Returns:
         bool: True if ran successfully.
@@ -246,7 +245,7 @@ def _download(ctx: typer.Context, urls: list[str], try_login: bool = True, debug
         transient=False,
     )
 
-    fn_logger = LoggerWrapped(progress.print, debug=debug)
+    fn_logger = LoggerWrapped(progress.print)
 
     dl = Download(
         tidal_obj=ctx.obj[CTX_TIDAL],
@@ -381,14 +380,6 @@ def download(
             help="File with URLs to download. One URL per line.",
         ),
     ] = None,
-    debug: Annotated[
-        bool,
-        typer.Option(
-            "--debug",
-            "-d",
-            help="Enable debug mode with full error tracebacks.",
-        ),
-    ] = False,
 ) -> bool:
     """Download media from provided URLs or a file containing URLs.
 
@@ -396,7 +387,6 @@ def download(
         ctx (typer.Context): Typer context object.
         urls (list[str] | None, optional): List of URLs to download. Defaults to None.
         file_urls (Path | None, optional): Path to file containing URLs. Defaults to None.
-        debug (bool, optional): Enable debug mode with full error tracebacks. Defaults to False.
 
     Returns:
         bool: True if download was successful, False otherwise.
@@ -411,7 +401,7 @@ def download(
 
             raise typer.Abort()
 
-    return _download(ctx, urls, debug=debug)
+    return _download(ctx, urls)
 
 
 @app_dl_fav.command(

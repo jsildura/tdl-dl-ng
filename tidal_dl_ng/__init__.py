@@ -1,12 +1,4 @@
 #!/usr/bin/env python
-
-# Apply mpegdash patch FIRST before any imports that use tidalapi
-from tidal_dl_ng.helper.mpegdash_patch import apply_mpegdash_patch
-
-apply_mpegdash_patch()
-
-# noqa: E402
-
 import importlib.metadata
 from pathlib import Path
 from urllib.parse import urlparse

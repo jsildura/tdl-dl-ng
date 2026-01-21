@@ -44,13 +44,6 @@
 # nuitka-project: --company-name=exislow
 
 
-# Apply mpegdash patch FIRST before any tidalapi imports
-from tidal_dl_ng.helper.mpegdash_patch import apply_mpegdash_patch
-
-apply_mpegdash_patch()
-
-# noqa: E402
-
 import math
 import sys
 import threading
