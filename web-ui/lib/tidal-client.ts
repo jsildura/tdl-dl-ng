@@ -179,7 +179,35 @@ export async function getPlaylistTracks(playlistId: string): Promise<TidalTrack[
     }
 
     const data = await response.json();
-    return data.items.map((item: { item: TidalTrack }) => item.item);
+    console.log('Playlist API response:', JSON.stringify(data, null, 2));
+
+    // Handle different response structures
+    let items = data.items;
+    if (!items && data.tracks?.items) {
+        items = data.tracks.items;
+    }
+
+    if (!items || !Array.isArray(items)) {
+        console.error('Unexpected playlist response structure:', data);
+        return [];
+    }
+
+    // Map items - handle both direct track objects and nested {item: track} structure
+    const tracks = items
+        .map((item: TidalTrack | { item?: TidalTrack }) => {
+            if ('item' in item && item.item) {
+                return item.item;
+            }
+            // Direct track object
+            if ('id' in item && 'title' in item) {
+                return item as TidalTrack;
+            }
+            return undefined;
+        })
+        .filter((track: TidalTrack | undefined): track is TidalTrack => track !== undefined && track !== null);
+
+    console.log('Parsed tracks:', tracks.length);
+    return tracks;
 }
 
 /**
@@ -258,12 +286,21 @@ export async function getLyrics(trackId: string | number): Promise<string | null
         const response = await fetchWithAuth(`/api/tracks/${trackId}/lyrics?countryCode=US`);
 
         if (!response.ok) {
+            console.log(`Lyrics not available for track ${trackId}: ${response.status}`);
             return null;
         }
 
         const data = await response.json();
-        return data.subtitles || data.lyrics || null;
-    } catch {
+        console.log('Lyrics API response for track', trackId, ':', data);
+
+        // Tidal returns lyrics in 'subtitles' for synced lyrics (LRC format) or 'lyrics' for plain text
+        const lyrics = data.subtitles || data.lyrics || null;
+        if (lyrics) {
+            console.log('Found lyrics, length:', lyrics.length);
+        }
+        return lyrics;
+    } catch (e) {
+        console.warn('Failed to fetch lyrics:', e);
         return null;
     }
 }
