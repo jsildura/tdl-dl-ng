@@ -20,19 +20,19 @@ export function UrlInput({ onDownload, isLoading }: UrlInputProps) {
 
     return (
         <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
-            <div className="relative">
+            <div className="relative group">
                 <input
                     type="text"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste Tidal URL (Track, Album, Playlist, or Video)..."
-                    className="w-full px-4 py-3 pl-12 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition"
+                    className="w-full px-12 py-4 rounded-full bg-surface-container-high text-on-surface placeholder:text-on-surface-variant/70 border-none outline-none ring-1 ring-transparent focus:ring-2 focus:ring-primary transition-all duration-200 shadow-sm"
                     disabled={isLoading}
                 />
-                <Link className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Link className="absolute left-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant w-6 h-6" />
                 <button
                     type="submit"
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 px-4 py-1.5 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 disabled:opacity-50 transition text-sm font-medium flex items-center gap-2"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 px-6 py-2.5 bg-primary text-on-primary rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:bg-surface-container-highest disabled:text-on-surface-variant/38 transition-all shadow-sm hover:shadow-md text-sm font-medium flex items-center gap-2 active:scale-95"
                     disabled={isLoading || !url.trim()}
                 >
                     <Download className="w-4 h-4" />

@@ -128,11 +128,11 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-100 flex items-center justify-center p-4">
-            <div className={`max-w-md w-full bg-gray-800 rounded-lg p-8 border border-gray-700 shadow-2xl space-y-6 transition-all duration-300 ${authData ? 'scale-105' : ''}`}>
-                <div className="text-center">
-                    <h1 className="text-2xl font-bold text-white mb-2">Connect Tidal Account</h1>
-                    <p className="text-gray-400 text-sm">Device Login Flow</p>
+        <div className="min-h-screen bg-background text-on-background flex items-center justify-center p-4 font-roboto selection:bg-primary-container selection:text-on-primary-container">
+            <div className={`max-w-md w-full bg-surface-container rounded-3xl p-8 shadow-xl space-y-8 transition-all duration-300 transform ${authData ? 'scale-105' : 'scale-100'}`}>
+                <div className="text-center space-y-2">
+                    <h1 className="text-3xl font-normal text-on-surface tracking-tight">Connect Tidal Account</h1>
+                    <p className="text-on-surface-variant text-sm font-medium">Device Login Flow</p>
                 </div>
 
                 {!authData ? (
@@ -140,25 +140,25 @@ export default function LoginPage() {
                         <button
                             onClick={handleLogin}
                             disabled={isLoading}
-                            className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 rounded-md text-white font-semibold transition disabled:opacity-50 flex items-center justify-center gap-2"
+                            className="w-full py-3.5 bg-primary text-on-primary rounded-full font-medium transition-all shadow-sm hover:shadow-md hover:bg-primary/90 disabled:opacity-50 disabled:bg-surface-container-highest disabled:text-on-surface-variant/38 flex items-center justify-center gap-2 active:scale-95"
                         >
                             {isLoading ? "Connecting..." : "Start Device Login"}
                         </button>
                     </div>
                 ) : (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="bg-gray-900/50 p-4 rounded-lg border border-cyan-500/30 text-center space-y-3">
-                            <p className="text-sm text-gray-400">Your Connection Code</p>
-                            <div className="flex items-center justify-center gap-2">
-                                <code className="text-3xl font-mono text-cyan-400 font-bold tracking-wider">
+                        <div className="bg-surface-container-high p-6 rounded-2xl border border-outline-variant/50 text-center space-y-4">
+                            <p className="text-sm text-on-surface-variant font-medium">Your Connection Code</p>
+                            <div className="flex items-center justify-center gap-3">
+                                <code className="text-4xl font-mono text-primary font-bold tracking-widest">
                                     {authData.user_code}
                                 </code>
                                 <button
                                     onClick={handleCopyCode}
-                                    className="p-2 hover:bg-gray-700 rounded-full transition text-gray-400 hover:text-white"
+                                    className="p-2.5 hover:bg-surface-container-highest rounded-full transition-colors text-on-surface-variant hover:text-primary"
                                     title="Copy Code"
                                 >
-                                    {copied ? <Check className="w-5 h-5 text-green-400" /> : <Copy className="w-5 h-5" />}
+                                    {copied ? <Check className="w-5 h-5 text-tertiary" /> : <Copy className="w-5 h-5" />}
                                 </button>
                             </div>
                         </div>
@@ -167,13 +167,13 @@ export default function LoginPage() {
                             href={authData.verification_uri_complete}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 rounded-md text-white font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20"
+                            className="w-full py-3.5 bg-primary text-on-primary rounded-full font-medium transition-all shadow-md hover:shadow-lg hover:bg-primary/90 flex items-center justify-center gap-2"
                         >
                             <ExternalLink className="w-4 h-4" />
                             Open Login Page
                         </a>
 
-                        <p className="text-xs text-center text-gray-500">
+                        <p className="text-xs text-center text-on-surface-variant/70 leading-relaxed">
                             Clicking button will open Tidal login in a new tab.
                             <br />
                             Verify the code matches the one above.
@@ -181,20 +181,20 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                <div className="bg-black/50 rounded p-4 font-mono text-xs text-green-400 min-h-[100px] max-h-[200px] overflow-y-auto whitespace-pre-wrap flex flex-col gap-1 border border-gray-800">
-                    <div className="flex items-center gap-2 border-b border-gray-800 pb-2 mb-2">
-                        <Terminal className="w-3 h-3" />
-                        <span className="text-gray-500">Console Output</span>
+                <div className="bg-surface-container-highest/50 rounded-xl p-4 font-mono text-xs text-tertiary min-h-[120px] max-h-[200px] overflow-y-auto whitespace-pre-wrap flex flex-col gap-1.5 border border-outline-variant/20 scrollbar-thin scrollbar-thumb-outline-variant/40 scrollbar-track-transparent">
+                    <div className="flex items-center gap-2 border-b border-outline-variant/20 pb-2 mb-1">
+                        <Terminal className="w-3.5 h-3.5 text-on-surface-variant" />
+                        <span className="text-on-surface-variant font-medium">Console Output</span>
                     </div>
                     {logs.length > 0 ? logs.map((log, i) => (
-                        <div key={i} className="break-all">{log}</div>
+                        <div key={i} className="break-all pl-1 border-l-2 border-tertiary/30">{log}</div>
                     )) : (
-                        <span className="text-gray-600 italic">Waiting for action...</span>
+                        <span className="text-on-surface-variant/50 italic pl-1">Waiting for action...</span>
                     )}
                 </div>
 
                 <div className="text-center pt-2">
-                    <Link href="/" className="text-sm text-gray-500 hover:text-cyan-400 transition">
+                    <Link href="/" className="text-sm font-medium text-on-surface-variant hover:text-primary hover:bg-surface-container-highest px-4 py-2 rounded-full transition-colors">
                         Skip to Dashboard
                     </Link>
                 </div>
