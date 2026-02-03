@@ -145,10 +145,10 @@ export default function Home() {
 
           <div className="space-y-4 pt-8">
             <h1 className="text-5xl md:text-6xl font-normal tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary pb-2">
-              Tidal DL NG
+              Tidal Downloader Web
             </h1>
             <p className="text-lg md:text-xl text-on-surface-variant max-w-lg mx-auto leading-relaxed">
-              Next Gen Downloader Web Interface
+              Next Generation Downloader for Tidal
             </p>
             {api.isServerless() && (
               <span className="inline-flex items-center px-3 py-1 text-sm font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
