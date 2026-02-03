@@ -2,10 +2,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UrlInput } from "@/components/UrlInput";
-import { DownloadQueue } from "@/components/DownloadQueue";
-import { api } from "@/lib/api";
-import { DownloadProgress } from "@/lib/downloader";
+import { UrlInput } from "../components/UrlInput";
+import { DownloadQueue } from "../components/DownloadQueue";
+import { api } from "../lib/api";
+import { DownloadProgress } from "../lib/downloader";
 
 interface AuthStatus {
   logged_in: boolean;
