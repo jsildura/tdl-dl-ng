@@ -31,7 +31,7 @@ export default function LoginPage() {
     useEffect(() => {
         return () => {
             if (pollingRef.current) {
-                clearInterval(pollingRef.current);
+                clearTimeout(pollingRef.current);
             }
         };
     }, []);
@@ -49,15 +49,20 @@ export default function LoginPage() {
     };
 
     const startPolling = (deviceCode: string, intervalSeconds: number) => {
-        if (pollingRef.current) clearInterval(pollingRef.current);
+        // Clear any existing polling
+        if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+        }
         loginSuccessRef.current = false; // Reset on new polling session
 
-        addLog(`Waiting for approval... Polling every ${intervalSeconds}s`);
+        // Use at least 2 seconds as the minimum interval to avoid rate limiting
+        const safeInterval = Math.max(intervalSeconds, 2);
+        addLog(`Waiting for approval... Polling every ${safeInterval}s`);
 
-        pollingRef.current = setInterval(async () => {
-            // Skip if login already succeeded
+        const poll = async () => {
+            // Stop if already successful or component unmounted
             if (loginSuccessRef.current) {
-                if (pollingRef.current) clearInterval(pollingRef.current);
                 return;
             }
 
@@ -67,7 +72,6 @@ export default function LoginPage() {
                 if (result.success) {
                     // Set flag immediately to prevent any more polling
                     loginSuccessRef.current = true;
-                    if (pollingRef.current) clearInterval(pollingRef.current);
 
                     addLog("Login Successful!");
                     addLog("Redirecting to dashboard...");
@@ -76,15 +80,22 @@ export default function LoginPage() {
                     setTimeout(() => {
                         router.push("/");
                     }, 1500);
+                    return; // Don't schedule next poll
                 }
             } catch (error) {
-                // If error is strictly about pending, we can ignore it (though api.pollLogin usually returns null for pending)
-                // If actual error:
+                // Log but continue polling for transient errors
                 console.error("Polling error:", error);
-                // Don't stop polling for transient network errors, but maybe stop for fatal ones?
-                // For now, we continue unless it throws explicitly
             }
-        }, intervalSeconds * 1000);
+
+            // Schedule next poll only after current one completes
+            // This prevents overlapping requests
+            if (!loginSuccessRef.current) {
+                pollingRef.current = setTimeout(poll, safeInterval * 1000);
+            }
+        };
+
+        // Start first poll after the interval (not immediately)
+        pollingRef.current = setTimeout(poll, safeInterval * 1000);
     };
 
     const handleLogin = async () => {
