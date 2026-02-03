@@ -142,6 +142,19 @@ export async function getTrack(trackId: string | number): Promise<TidalTrack> {
 }
 
 /**
+ * Get playlist info by ID
+ */
+export async function getPlaylist(playlistId: string): Promise<TidalPlaylist> {
+    const response = await fetchWithAuth(`/api/playlists/${playlistId}?countryCode=US`);
+
+    if (!response.ok) {
+        throw new Error('Failed to get playlist');
+    }
+
+    return response.json();
+}
+
+/**
  * Get album info by ID
  */
 export async function getAlbum(albumId: string | number): Promise<TidalAlbum> {

@@ -140,7 +140,7 @@ export default function LoginPage() {
                         <button
                             onClick={handleLogin}
                             disabled={isLoading}
-                            className="w-full py-3.5 bg-primary text-on-primary rounded-full font-medium transition-all shadow-sm hover:shadow-md hover:bg-primary/90 disabled:opacity-50 disabled:bg-surface-container-highest disabled:text-on-surface-variant/38 flex items-center justify-center gap-2 active:scale-95"
+                            className="w-full py-3.5 bg-primary text-on-primary rounded-full font-medium transition-all shadow-sm hover:shadow-md hover:bg-primary/90 disabled:opacity-50 disabled:bg-surface-container-highest disabled:text-on-surface-variant/38 flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
                         >
                             {isLoading ? "Connecting..." : "Start Device Login"}
                         </button>
@@ -164,7 +164,7 @@ export default function LoginPage() {
                         </div>
 
                         <a
-                            href={authData.verification_uri_complete}
+                            href={authData.verification_uri_complete.startsWith('http') ? authData.verification_uri_complete : `https://${authData.verification_uri_complete}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="w-full py-3.5 bg-primary text-on-primary rounded-full font-medium transition-all shadow-md hover:shadow-lg hover:bg-primary/90 flex items-center justify-center gap-2"

@@ -6,12 +6,21 @@ import { UrlInput } from "../components/UrlInput";
 import { DownloadQueue } from "../components/DownloadQueue";
 import { api } from "../lib/api";
 import { DownloadProgress } from "../lib/downloader";
-import { Menu, X } from "lucide-react";
+import { TidalTrack, TidalAlbum, TidalPlaylist } from "../lib/tidal-client";
+import { Menu, X, Trash2 } from "lucide-react";
 
 interface AuthStatus {
   logged_in: boolean;
   username?: string;
   email?: string;
+}
+
+interface DownloadHistoryItem {
+  id: string;
+  title: string;
+  artist: string;
+  type: 'Track' | 'Album' | 'Playlist';
+  date: string;
 }
 
 export default function Home() {
@@ -20,10 +29,36 @@ export default function Home() {
   const [status, setStatus] = useState<AuthStatus>({ logged_in: false });
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
 
   useEffect(() => {
     api.checkStatus().then(setStatus).catch(console.error);
+
+    // Load history
+    const saved = localStorage.getItem('download_history');
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse history', e);
+      }
+    }
   }, []);
+
+  const addToHistory = (item: DownloadHistoryItem) => {
+    setHistory(prev => {
+      const newHistory = [item, ...prev];
+      localStorage.setItem('download_history', JSON.stringify(newHistory));
+      return newHistory;
+    });
+  };
+
+  const clearHistory = () => {
+    if (confirm('Are you sure you want to clear your download history?')) {
+      setHistory([]);
+      localStorage.removeItem('download_history');
+    }
+  };
 
   const handleUrlDownload = async (url: string) => {
     setIsLoading(true);
@@ -31,12 +66,54 @@ export default function Home() {
     setDownloadProgress({ stage: 'fetching', progress: 0, message: 'Starting download...' });
 
     try {
-      await api.download(
+      const result = await api.download(
         { url },
         (progress) => {
           setDownloadProgress(progress);
         }
-      );
+      ) as any; // Cast to any to access the custom return type we added
+
+      // Add to history if successful
+      if (result.status === 'completed' && result.data) {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        let historyItem: DownloadHistoryItem | null = null;
+
+        if (result.type === 'TRACK') {
+          const track = result.data as TidalTrack;
+          historyItem = {
+            id: Date.now().toString(),
+            title: track.title,
+            artist: track.artist?.name || 'Unknown',
+            type: 'Track',
+            date: dateStr
+          };
+        } else if (result.type === 'ALBUM') {
+          const album = result.data as TidalAlbum;
+          historyItem = {
+            id: Date.now().toString(),
+            title: album.title,
+            artist: album.artist?.name || 'Unknown',
+            type: 'Album',
+            date: dateStr
+          };
+        } else if (result.type === 'PLAYLIST') {
+          const playlist = result.data as TidalPlaylist;
+          historyItem = {
+            id: Date.now().toString(),
+            title: playlist.title,
+            artist: 'Tidal Playlist',
+            type: 'Playlist',
+            date: dateStr
+          };
+        }
+
+        if (historyItem) {
+          addToHistory(historyItem);
+        }
+      }
+
       console.log("Download completed for URL", url);
     } catch (err) {
       console.error("Download failed", err);
@@ -145,14 +222,14 @@ export default function Home() {
 
           <div className="space-y-4 pt-8">
             <h1 className="text-5xl md:text-6xl font-normal tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary pb-2">
-              Tidal DL NG
+              Tidal Downloader Web
             </h1>
             <p className="text-lg md:text-xl text-on-surface-variant max-w-lg mx-auto leading-relaxed">
-              Next Gen Downloader Web Interface
+              Next Generation Downloader for Tidal
             </p>
             {api.isServerless() && (
               <span className="inline-flex items-center px-3 py-1 text-sm font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
-                Serverless Mode
+                Serverless
               </span>
             )}
           </div>
@@ -168,17 +245,64 @@ export default function Home() {
             </div>
 
             <div className="space-y-6">
-              {(isLoading || error) && (
-                <h2 className="text-2xl font-normal text-on-surface">Status</h2>
-              )}
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-normal text-on-surface">Download History</h2>
+                {history.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/10 rounded-full transition-colors"
+                    title="Clear History"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
+              </div>
 
+              {/* Status/Error messages still shown if present */}
               {error && (
-                <div className="p-4 bg-error-container text-on-error-container rounded-2xl border-l-4 border-error flex items-start gap-3 shadow-sm">
+                <div className="p-4 bg-error-container text-on-error-container rounded-2xl border-l-4 border-error flex items-start gap-3 shadow-sm animate-in slide-in-from-top-2">
                   <div className="flex-1 text-sm font-medium">
                     {error}
                   </div>
                 </div>
               )}
+
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
+                {history.length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-outline-variant/30 rounded-2xl">
+                    <p className="text-on-surface-variant/60 text-sm italic">No downloads yet.</p>
+                  </div>
+                ) : (
+                  history.map(item => (
+                    <div key={item.id} className="p-3 bg-surface-container-high/40 hover:bg-surface-container-high rounded-xl border border-outline-variant/20 hover:border-primary/20 transition-all group">
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <p className="font-medium text-on-surface truncate text-sm">
+                              {item.artist}
+                            </p>
+                            <span className="text-on-surface-variant/60 text-xs">-</span>
+                            <p className="text-on-surface-variant truncate text-sm">
+                              {item.title}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${item.type === 'Track' ? 'bg-primary/10 text-primary' :
+                              item.type === 'Album' ? 'bg-secondary/10 text-secondary' :
+                                'bg-tertiary/10 text-tertiary'
+                              }`}>
+                              {item.type}
+                            </span>
+                            <span className="text-[10px] text-outline">
+                              {item.date}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

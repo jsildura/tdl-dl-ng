@@ -105,14 +105,14 @@ export const api = {
         // Use client-side downloader
         if (isServerless || isAuthenticated()) {
             if (trackId) {
-                await downloadTrack(trackId, onProgress);
-                return { status: 'completed' };
+                const result = await downloadTrack(trackId, onProgress);
+                return { status: 'completed', type: 'TRACK', data: result };
             } else if (albumId) {
-                await downloadAlbum(albumId, onProgress);
-                return { status: 'completed' };
+                const result = await downloadAlbum(albumId, onProgress);
+                return { status: 'completed', type: 'ALBUM', data: result };
             } else if (playlistId) {
-                await downloadPlaylist(playlistId, onProgress);
-                return { status: 'completed' };
+                const result = await downloadPlaylist(playlistId, onProgress);
+                return { status: 'completed', type: 'PLAYLIST', data: result };
             }
             throw new Error('Could not determine media type from input');
         }
