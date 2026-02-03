@@ -9,18 +9,19 @@
 
 export interface Env {
     ALLOWED_ORIGINS: string;
+    TIDAL_CLIENT_ID: string;
+    TIDAL_CLIENT_SECRET: string;
     // SESSIONS: KVNamespace; // Optional: for server-side session storage
 }
 
 // Tidal API constants
 const TIDAL_AUTH_URL = 'https://auth.tidal.com/v1/oauth2';
 const TIDAL_API_URL = 'https://api.tidal.com/v1';
-const TIDAL_CLIENT_ID = 'zU4XHVVkc2tDPo4t'; // Public Tidal client ID
-const TIDAL_CLIENT_SECRET = 'VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4=';
 
 // Helper to add CORS headers
 function corsHeaders(origin: string, env: Env): HeadersInit {
-    const allowedOrigins = env.ALLOWED_ORIGINS.split(',');
+    // Default to localhost if ALLOWED_ORIGINS is not set
+    const allowedOrigins = (env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
     const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
 
     return {
@@ -48,7 +49,7 @@ async function handleDeviceAuth(env: Env, origin: string): Promise<Response> {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-            client_id: TIDAL_CLIENT_ID,
+            client_id: env.TIDAL_CLIENT_ID,
             scope: 'r_usr w_usr',
         }),
     });
@@ -74,8 +75,8 @@ async function handleTokenPoll(request: Request, env: Env, origin: string): Prom
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-            client_id: TIDAL_CLIENT_ID,
-            client_secret: TIDAL_CLIENT_SECRET,
+            client_id: env.TIDAL_CLIENT_ID,
+            client_secret: env.TIDAL_CLIENT_SECRET,
             device_code: body.device_code,
             grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
             scope: 'r_usr w_usr',
@@ -103,8 +104,8 @@ async function handleTokenRefresh(request: Request, env: Env, origin: string): P
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-            client_id: TIDAL_CLIENT_ID,
-            client_secret: TIDAL_CLIENT_SECRET,
+            client_id: env.TIDAL_CLIENT_ID,
+            client_secret: env.TIDAL_CLIENT_SECRET,
             refresh_token: body.refresh_token,
             grant_type: 'refresh_token',
         }),
