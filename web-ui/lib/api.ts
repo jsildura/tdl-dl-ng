@@ -21,14 +21,22 @@ export const api = {
         if (isServerless || isAuthenticated()) {
             const token = await getValidToken();
             if (token) {
-                const user = await fetchUserInfo();
-                if (user) {
-                    return {
-                        logged_in: true,
-                        username: `${user.firstName} ${user.lastName}`.trim() || user.username,
-                        email: user.email,
-                    };
+                // Token exists and is valid - user is logged in
+                // Try to get user info, but don't fail if it doesn't work
+                try {
+                    const user = await fetchUserInfo();
+                    if (user) {
+                        return {
+                            logged_in: true,
+                            username: `${user.firstName} ${user.lastName}`.trim() || user.username,
+                            email: user.email,
+                        };
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch user info:', e);
                 }
+                // Token is valid but couldn't get user info - still logged in
+                return { logged_in: true, username: 'Tidal User', email: null };
             }
             return { logged_in: false, username: null, email: null };
         }
