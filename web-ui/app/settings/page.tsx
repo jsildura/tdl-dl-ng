@@ -15,6 +15,7 @@ export default function SettingsPage() {
     useEffect(() => {
         // Load settings from localStorage
         const loaded = getSettings();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSettings(loaded);
         setIsLoading(false);
     }, []);
