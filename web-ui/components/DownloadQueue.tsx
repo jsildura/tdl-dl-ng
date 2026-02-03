@@ -2,7 +2,7 @@
 "use client";
 
 import { Activity } from "lucide-react";
-import { DownloadProgress } from "@/lib/downloader";
+import { DownloadProgress } from "../lib/downloader";
 
 interface DownloadQueueProps {
     progress?: DownloadProgress | null;
