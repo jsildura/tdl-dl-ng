@@ -4,7 +4,8 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { getStreamInfo, getTrack, getCoverUrl, getLyrics, TidalTrack } from './tidal-client';
+import JSZip from 'jszip';
+import { getStreamInfo, getTrack, getAlbum, getAlbumTracks, getPlaylistTracks, getCoverUrl, getLyrics, TidalTrack, TidalAlbum } from './tidal-client';
 import { getSettings } from './settings';
 
 // FFmpeg instance (lazy loaded)
@@ -15,6 +16,9 @@ export interface DownloadProgress {
     stage: 'fetching' | 'processing' | 'complete' | 'error';
     progress: number; // 0-100
     message: string;
+    currentTrack?: number;
+    totalTracks?: number;
+    trackName?: string;
 }
 
 export type ProgressCallback = (progress: DownloadProgress) => void;
@@ -171,13 +175,18 @@ async function embedMetadata(
         }
     }
 
+    // Add lyrics if available and enabled (must be added to metadataArgs BEFORE spreading)
+    if (lyrics && settings.lyrics_embed) {
+        // Use LYRICS tag for synced/LRC format lyrics, and lyrics-XXX for plain text
+        // Escape newlines and special characters for FFmpeg metadata
+        const escapedLyrics = lyrics.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+        metadataArgs.push('-metadata', `LYRICS=${escapedLyrics}`);
+        // Also add as unsyncedlyrics for compatibility with more players
+        metadataArgs.push('-metadata', `UNSYNCEDLYRICS=${escapedLyrics}`);
+    }
+
     // Add metadata
     ffmpegArgs.push(...metadataArgs);
-
-    // Add lyrics if available and enabled
-    if (lyrics && settings.lyrics_embed) {
-        metadataArgs.push('-metadata', `lyrics=${lyrics}`);
-    }
 
     // Copy audio codec (no re-encoding)
     ffmpegArgs.push('-c:a', 'copy');
@@ -320,4 +329,276 @@ export async function downloadTrack(
  */
 export function isFFmpegLoaded(): boolean {
     return ffmpegLoaded;
+}
+
+/**
+ * Process a single track and return the data (without saving to disk)
+ * Used internally by downloadAlbum and downloadPlaylist
+ * @param trackId - The track ID to process
+ * @param prefetchedTrack - Optional pre-fetched track metadata (avoids extra API call)
+ */
+async function processTrackData(
+    trackId: string | number,
+    prefetchedTrack?: TidalTrack
+): Promise<{ data: Uint8Array; filename: string; track: TidalTrack }> {
+    const settings = getSettings();
+
+    // Use pre-fetched track metadata if available, otherwise fetch it
+    const track = prefetchedTrack || await getTrack(trackId);
+
+    // Get stream URL
+    const streamInfo = await getStreamInfo(trackId);
+
+    if (!streamInfo.streamUrl) {
+        throw new Error('Could not get stream URL');
+    }
+
+    // Get cover art
+    let coverData: Uint8Array | null = null;
+    if (settings.metadata_cover_embed && track.album?.cover) {
+        try {
+            const coverUrl = getCoverUrl(track.album.cover, parseInt(settings.metadata_cover_dimension));
+            const coverResponse = await fetch(coverUrl);
+            if (coverResponse.ok) {
+                coverData = new Uint8Array(await coverResponse.arrayBuffer());
+            }
+        } catch (e) {
+            console.warn('Failed to fetch cover art:', e);
+        }
+    }
+
+    // Get lyrics (skip if it fails, not critical)
+    let lyrics: string | null = null;
+    if (settings.lyrics_embed) {
+        try {
+            lyrics = await getLyrics(trackId);
+        } catch {
+            console.warn('Failed to fetch lyrics for track', trackId);
+        }
+    }
+
+    // Download audio file
+    const audioResponse = await fetch(streamInfo.streamUrl);
+    if (!audioResponse.ok) {
+        throw new Error(`Download failed: ${audioResponse.status}`);
+    }
+    const audioData = new Uint8Array(await audioResponse.arrayBuffer());
+
+    // Determine file format from quality
+    const isFlac = streamInfo.audioQuality === 'HI_RES' || streamInfo.audioQuality === 'LOSSLESS';
+    const inputFormat = isFlac ? 'flac' : 'm4a';
+
+    // Load FFmpeg and process
+    const ffmpegInstance = await loadFFmpeg();
+
+    const processedData = await embedMetadata(
+        ffmpegInstance,
+        audioData,
+        track,
+        coverData,
+        lyrics,
+        inputFormat
+    );
+
+    const filename = `${formatFilename(track)}.${isFlac ? 'flac' : 'm4a'}`;
+
+    return { data: new Uint8Array(processedData), filename, track };
+}
+
+/**
+ * Download all tracks in an album as a ZIP file
+ */
+export async function downloadAlbum(
+    albumId: string | number,
+    onProgress?: ProgressCallback
+): Promise<void> {
+    try {
+        onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching album info...' });
+
+        // Get album info and tracks
+        const album = await getAlbum(albumId);
+        const tracks = await getAlbumTracks(albumId);
+
+        if (!tracks || tracks.length === 0) {
+            throw new Error('Album has no tracks');
+        }
+
+        const totalTracks = tracks.length;
+        const zip = new JSZip();
+        const albumFolder = `${album.artist?.name || 'Unknown Artist'} - ${album.title || 'Unknown Album'}`
+            .replace(/[<>:"/\\|?*]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        onProgress?.({
+            stage: 'fetching',
+            progress: 5,
+            message: `Downloading ${totalTracks} tracks...`,
+            totalTracks,
+            currentTrack: 0
+        });
+
+        // Download each track
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            const currentTrack = i + 1;
+            const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+
+            onProgress?.({
+                stage: 'fetching',
+                progress: 5 + (i / totalTracks) * 85,
+                message: `Downloading track ${currentTrack}/${totalTracks}: ${trackName}`,
+                currentTrack,
+                totalTracks,
+                trackName
+            });
+
+            try {
+                const { data, filename } = await processTrackData(track.id, track);
+                // Add track number prefix for proper ordering
+                const numberedFilename = `${String(track.trackNumber || currentTrack).padStart(2, '0')} - ${filename}`;
+                zip.file(numberedFilename, data);
+            } catch (error) {
+                console.error(`Failed to download track ${track.id}:`, error);
+                // Continue with other tracks
+            }
+        }
+
+        onProgress?.({ stage: 'processing', progress: 90, message: 'Creating ZIP file...' });
+
+        // Generate ZIP file
+        const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+            onProgress?.({
+                stage: 'processing',
+                progress: 90 + (metadata.percent / 100) * 8,
+                message: `Compressing... ${Math.round(metadata.percent)}%`
+            });
+        });
+
+        onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
+
+        // Trigger browser save dialog
+        const url = URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${albumFolder}.zip`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Cleanup URL after a delay
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+
+    } catch (error) {
+        console.error('Album download error:', error);
+        onProgress?.({
+            stage: 'error',
+            progress: 0,
+            message: error instanceof Error ? error.message : 'Album download failed'
+        });
+        throw error;
+    }
+}
+
+/**
+ * Download all tracks in a playlist as a ZIP file
+ */
+export async function downloadPlaylist(
+    playlistId: string,
+    onProgress?: ProgressCallback
+): Promise<void> {
+    try {
+        onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching playlist info...' });
+
+        // Get playlist tracks
+        const tracks = await getPlaylistTracks(playlistId);
+
+        if (!tracks || tracks.length === 0) {
+            throw new Error('Playlist has no tracks');
+        }
+
+        const totalTracks = tracks.length;
+        const zip = new JSZip();
+
+        onProgress?.({
+            stage: 'fetching',
+            progress: 5,
+            message: `Downloading ${totalTracks} tracks...`,
+            totalTracks,
+            currentTrack: 0
+        });
+
+        // Download each track
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            const currentTrack = i + 1;
+
+            // Skip if track is undefined (can happen with some playlist items)
+            if (!track || !track.id) {
+                console.warn(`Skipping undefined track at index ${i}`);
+                continue;
+            }
+
+            const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+
+            onProgress?.({
+                stage: 'fetching',
+                progress: 5 + (i / totalTracks) * 85,
+                message: `Downloading track ${currentTrack}/${totalTracks}: ${trackName}`,
+                currentTrack,
+                totalTracks,
+                trackName
+            });
+
+            try {
+                const { data, filename } = await processTrackData(track.id, track);
+                // Add track number prefix for proper ordering
+                const numberedFilename = `${String(currentTrack).padStart(2, '0')} - ${filename}`;
+                zip.file(numberedFilename, data);
+            } catch (error) {
+                console.error(`Failed to download track ${track.id}:`, error);
+                // Continue with other tracks
+            }
+        }
+
+        onProgress?.({ stage: 'processing', progress: 90, message: 'Creating ZIP file...' });
+
+        // Generate ZIP file
+        const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+            onProgress?.({
+                stage: 'processing',
+                progress: 90 + (metadata.percent / 100) * 8,
+                message: `Compressing... ${Math.round(metadata.percent)}%`
+            });
+        });
+
+        onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
+
+        // Trigger browser save dialog
+        const url = URL.createObjectURL(zipBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Playlist-${playlistId.substring(0, 8)}.zip`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Cleanup URL after a delay
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+
+    } catch (error) {
+        console.error('Playlist download error:', error);
+        onProgress?.({
+            stage: 'error',
+            progress: 0,
+            message: error instanceof Error ? error.message : 'Playlist download failed'
+        });
+        throw error;
+    }
 }
