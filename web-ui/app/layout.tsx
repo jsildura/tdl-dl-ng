@@ -9,7 +9,7 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "Tidal DL NGWeb Interface",
+  title: "Tidal Downloader Web",
   description: "Next Generation Downloader for Tidal",
 };
 
