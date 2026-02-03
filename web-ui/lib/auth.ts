@@ -34,10 +34,11 @@ const TOKEN_STORAGE_KEY = 'tidal-dl-ng-token';
 const USER_STORAGE_KEY = 'tidal-dl-ng-user';
 
 // Get Worker URL from environment or default to localhost for development
+// Get Worker URL from environment or default to localhost for development
 function getWorkerUrl(): string {
     if (typeof window !== 'undefined') {
         // Check for environment variable (set during build)
-        const envUrl = (window as any).__NEXT_PUBLIC_WORKER_URL__;
+        const envUrl = (window as unknown as { __NEXT_PUBLIC_WORKER_URL__?: string }).__NEXT_PUBLIC_WORKER_URL__;
         if (envUrl) return envUrl;
     }
     // Default to localhost worker for development

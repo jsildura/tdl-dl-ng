@@ -4,14 +4,13 @@
  */
 
 import { getValidToken, isAuthenticated, startDeviceAuth, pollForToken, clearAuth, fetchUserInfo } from './auth';
-import { search as tidalSearch, parseTidalUrl, getStreamInfo, getTrack, TidalTrack } from './tidal-client';
+import { search as tidalSearch, parseTidalUrl } from './tidal-client';
 import { getSettings, saveSettings, TidalSettings } from './settings';
 import { downloadTrack, DownloadProgress } from './downloader';
 
 // Environment detection
 const isServerless = process.env.NEXT_PUBLIC_SERVERLESS === 'true' || typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
 const PYTHON_API_BASE = "http://127.0.0.1:8000/api";
-const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:8787';
 
 export const api = {
   /**

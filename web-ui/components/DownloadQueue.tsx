@@ -1,7 +1,6 @@
 
 "use client";
 
-import { useState } from "react";
 import { Activity } from "lucide-react";
 import { DownloadProgress } from "@/lib/downloader";
 

@@ -4,7 +4,7 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { toBlobURL } from '@ffmpeg/util';
 import { getStreamInfo, getTrack, getCoverUrl, getLyrics, TidalTrack } from './tidal-client';
 import { getSettings } from './settings';
 

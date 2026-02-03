@@ -1,9 +1,9 @@
 
 import { useEffect, useState } from "react";
 
-export function useSSE(url: string) {
-    const [data, setData] = useState<any>(null);
-    const [error, setError] = useState<any>(null);
+export function useSSE<T = unknown>(url: string) {
+    const [data, setData] = useState<T | null>(null);
+    const [error, setError] = useState<Event | null>(null);
     const [connected, setConnected] = useState(false);
 
     useEffect(() => {
