@@ -5,8 +5,10 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import JSZip from 'jszip';
-import { getStreamInfo, getTrack, getAlbum, getAlbumTracks, getPlaylistTracks, getCoverUrl, getLyrics, TidalTrack, TidalAlbum } from './tidal-client';
+import { getStreamInfo, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getCoverUrl, getLyrics, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
 import { getSettings } from './settings';
+
+
 
 // FFmpeg instance (lazy loaded)
 let ffmpeg: FFmpeg | null = null;
@@ -162,15 +164,18 @@ async function embedMetadata(
     const ffmpegArgs = ['-i', inputFile];
 
     // Add cover art if available and enabled
+    let hasCoverArt = false;
     if (coverData && settings.metadata_cover_embed) {
         await ffmpegInstance.writeFile('cover.jpg', coverData);
         ffmpegArgs.push('-i', 'cover.jpg');
         ffmpegArgs.push('-map', '0:a', '-map', '1:0');
+        hasCoverArt = true;
 
         if (inputFormat === 'flac') {
             ffmpegArgs.push('-disposition:v', 'attached_pic');
         } else {
-            ffmpegArgs.push('-c:v', 'mjpeg');
+            // Use copy codec for M4A/AAC to avoid mjpeg transcoding hangs in WASM
+            ffmpegArgs.push('-c:v', 'copy');
             ffmpegArgs.push('-disposition:v:0', 'attached_pic');
         }
     }
@@ -178,8 +183,10 @@ async function embedMetadata(
     // Add lyrics if available and enabled (must be added to metadataArgs BEFORE spreading)
     if (lyrics && settings.lyrics_embed) {
         // Use LYRICS tag for synced/LRC format lyrics, and lyrics-XXX for plain text
-        // Escape newlines and special characters for FFmpeg metadata
-        const escapedLyrics = lyrics.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+        // Escape special characters for FFmpeg metadata
+        // Note: We do NOT escape newlines (\n) because we want actual line breaks, 
+        // not literal "\n" characters in the output.
+        const escapedLyrics = lyrics.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;');
         metadataArgs.push('-metadata', `LYRICS=${escapedLyrics}`);
         // Also add as unsyncedlyrics for compatibility with more players
         metadataArgs.push('-metadata', `UNSYNCEDLYRICS=${escapedLyrics}`);
@@ -203,7 +210,7 @@ async function embedMetadata(
     // Cleanup
     await ffmpegInstance.deleteFile(inputFile);
     await ffmpegInstance.deleteFile(outputFile);
-    if (coverData) {
+    if (hasCoverArt) {
         try {
             await ffmpegInstance.deleteFile('cover.jpg');
         } catch { }
@@ -218,7 +225,7 @@ async function embedMetadata(
 export async function downloadTrack(
     trackId: string | number,
     onProgress?: ProgressCallback
-): Promise<void> {
+): Promise<TidalTrack> {
     try {
         const settings = getSettings();
 
@@ -312,6 +319,8 @@ export async function downloadTrack(
         setTimeout(() => URL.revokeObjectURL(url), 10000);
 
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+
+        return track;
 
     } catch (error) {
         console.error('Download error:', error);
@@ -411,7 +420,7 @@ async function processTrackData(
 export async function downloadAlbum(
     albumId: string | number,
     onProgress?: ProgressCallback
-): Promise<void> {
+): Promise<TidalAlbum> {
     try {
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching album info...' });
 
@@ -492,6 +501,8 @@ export async function downloadAlbum(
 
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
 
+        return album;
+
     } catch (error) {
         console.error('Album download error:', error);
         onProgress?.({
@@ -509,11 +520,12 @@ export async function downloadAlbum(
 export async function downloadPlaylist(
     playlistId: string,
     onProgress?: ProgressCallback
-): Promise<void> {
+): Promise<TidalPlaylist> {
     try {
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching playlist info...' });
 
-        // Get playlist tracks
+        // Get playlist info
+        const playlist = await getPlaylist(playlistId);
         const tracks = await getPlaylistTracks(playlistId);
 
         if (!tracks || tracks.length === 0) {
@@ -577,11 +589,18 @@ export async function downloadPlaylist(
 
         onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
 
+        // Use proper playlist title for folder name
+        const playlistFolder = `${playlist.title || 'Unknown Playlist'}`
+            .replace(/[<>:"/\\|?*]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
         // Trigger browser save dialog
         const url = URL.createObjectURL(zipBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Playlist-${playlistId.substring(0, 8)}.zip`;
+        // Use playlist title in filename
+        link.download = `${playlistFolder}.zip`;
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
@@ -591,6 +610,8 @@ export async function downloadPlaylist(
         setTimeout(() => URL.revokeObjectURL(url), 10000);
 
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+
+        return playlist;
 
     } catch (error) {
         console.error('Playlist download error:', error);
