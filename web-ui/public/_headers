@@ -1,0 +1,6 @@
+/*
+  Cross-Origin headers for SharedArrayBuffer support (required for ffmpeg.wasm)
+*/
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
