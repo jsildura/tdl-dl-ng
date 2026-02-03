@@ -6,7 +6,7 @@
 import { getValidToken, isAuthenticated, startDeviceAuth, pollForToken, clearAuth, fetchUserInfo } from './auth';
 import { search as tidalSearch, parseTidalUrl } from './tidal-client';
 import { getSettings, saveSettings, TidalSettings } from './settings';
-import { downloadTrack, DownloadProgress } from '@/lib/downloader';
+import { downloadTrack, downloadAlbum, downloadPlaylist, DownloadProgress } from '@/lib/downloader';
 
 // Environment detection
 const isServerless = process.env.NEXT_PUBLIC_SERVERLESS === 'true' || typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
@@ -74,28 +74,47 @@ export const api = {
         onProgress?: (progress: DownloadProgress) => void
     ) => {
         let trackId: string | null = null;
+        let albumId: string | null = null;
+        let playlistId: string | null = null;
 
-        // Parse URL to get track ID
+        // Parse URL to get media type and ID
         if (data.url) {
             const parsed = parseTidalUrl(data.url);
-            if (parsed && parsed.type === 'track') {
-                trackId = parsed.id;
-            } else if (parsed) {
-                // For albums/playlists, we'd use tidal-client logic
-                throw new Error(`${parsed.type} downloads not yet supported in serverless mode. Please use track URLs.`);
+            if (parsed) {
+                if (parsed.type === 'track') {
+                    trackId = parsed.id;
+                } else if (parsed.type === 'album') {
+                    albumId = parsed.id;
+                } else if (parsed.type === 'playlist') {
+                    playlistId = parsed.id;
+                } else {
+                    throw new Error(`${parsed.type} downloads not yet supported.`);
+                }
             }
-        } else if (data.media_id && data.media_type?.toLowerCase() === 'track') {
-            trackId = data.media_id;
-        }
-
-        if (!trackId) {
-            throw new Error('Could not determine track ID from input');
+        } else if (data.media_id && data.media_type) {
+            const type = data.media_type.toLowerCase();
+            if (type === 'track') {
+                trackId = data.media_id;
+            } else if (type === 'album') {
+                albumId = data.media_id;
+            } else if (type === 'playlist') {
+                playlistId = data.media_id;
+            }
         }
 
         // Use client-side downloader
         if (isServerless || isAuthenticated()) {
-            await downloadTrack(trackId, onProgress);
-            return { status: 'completed' };
+            if (trackId) {
+                await downloadTrack(trackId, onProgress);
+                return { status: 'completed' };
+            } else if (albumId) {
+                await downloadAlbum(albumId, onProgress);
+                return { status: 'completed' };
+            } else if (playlistId) {
+                await downloadPlaylist(playlistId, onProgress);
+                return { status: 'completed' };
+            }
+            throw new Error('Could not determine media type from input');
         }
 
         // Fall back to Python backend
