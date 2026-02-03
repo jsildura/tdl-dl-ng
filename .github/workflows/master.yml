@@ -1,4 +1,4 @@
-name: master
+name: Streamflix CI
 
 on:
   push:
@@ -8,63 +8,49 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  quality:
-    runs-on: ubuntu-24.04
+  web-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./web-ui
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - uses: actions/cache@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-ui/package-lock.json
 
-      - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Run checks
-        run: make check
+      - name: Lint
+        run: npm run lint
 
-  tox:
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
-      fail-fast: false
+      - name: Build
+        run: npm run build
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./worker
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: worker/package-lock.json
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+      - name: Install dependencies
+        run: npm ci
+        
+      # Wrangler check or just compile check could go here if added to package.json
 
-      - name: Load cached venv
-        uses: actions/cache@v4
-        with:
-          path: .tox
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
-
-      - name: Install tox
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox tox-gh-actions
-
-      - name: Test with tox
-        run: tox
-
-  check-docs:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-
-      - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
-
-      - name: Check if documentation can be built
-        run: poetry run mkdocs build -s
