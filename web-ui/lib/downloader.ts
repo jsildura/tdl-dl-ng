@@ -4,7 +4,6 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { toBlobURL } from '@ffmpeg/util';
 import { getStreamInfo, getTrack, getCoverUrl, getLyrics, TidalTrack } from './tidal-client';
 import { getSettings } from './settings';
 
@@ -32,16 +31,21 @@ async function loadFFmpeg(onProgress?: ProgressCallback): Promise<FFmpeg> {
 
     ffmpeg = new FFmpeg();
 
-    // Load FFmpeg with proper CORS settings for WASM
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    // Use direct URLs instead of blob URLs to avoid Next.js module resolution issues
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
 
-    await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    });
+    try {
+        await ffmpeg.load({
+            coreURL: `${baseURL}/ffmpeg-core.js`,
+            wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+        });
 
-    ffmpegLoaded = true;
-    return ffmpeg;
+        ffmpegLoaded = true;
+        return ffmpeg;
+    } catch (error) {
+        console.error('Failed to load FFmpeg:', error);
+        throw new Error('Failed to load audio processor. Please ensure you have a stable internet connection.');
+    }
 }
 
 /**
