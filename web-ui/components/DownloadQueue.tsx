@@ -39,33 +39,49 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
         }
     };
 
+    const isMultiTrack = progress?.totalTracks && progress.totalTracks > 1;
+
     return (
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-cyan-400" />
+        <div className="bg-surface-container rounded-3xl p-6 shadow-md transition-shadow hover:shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-medium text-on-surface flex items-center gap-3">
+                    <Activity className="w-6 h-6 text-primary" />
                     Active Download
                 </h3>
-                <span className={`text-xs px-2 py-1 rounded-full ${progress ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}`}>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-highest text-on-surface-variant'}`}>
                     {progress ? getStatusText() : 'Idle'}
                 </span>
             </div>
 
             {progress ? (
                 <div className="space-y-4">
-                    <div className="flex justify-between items-center text-sm text-gray-300">
+                    {/* Multi-track indicator */}
+                    {isMultiTrack && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-tertiary font-medium">
+                                Track {progress.currentTrack}/{progress.totalTracks}
+                            </span>
+                            {progress.trackName && (
+                                <span className="text-on-surface-variant truncate max-w-[60%] text-right font-medium">
+                                    {progress.trackName}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-sm text-on-surface-variant font-medium">
                         <span className="truncate max-w-[80%]">{progress.message}</span>
                         <span>{Math.round(getProgressPercent())}%</span>
                     </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
+                    <div className="w-full bg-surface-container-highest rounded-full h-2 overflow-hidden">
                         <div
-                            className={`${getStatusColor()} h-2 rounded-full transition-all duration-300 ease-in-out`}
+                            className={`h-full rounded-full transition-all duration-300 ease-in-out ${progress.stage === 'error' ? 'bg-error' : 'bg-primary'}`}
                             style={{ width: `${getProgressPercent()}%` }}
                         />
                     </div>
                 </div>
             ) : (
-                <div className="text-gray-500 text-sm text-center py-4">
+                <div className="text-on-surface-variant/60 text-sm text-center py-6 font-medium">
                     No active downloads
                 </div>
             )}
