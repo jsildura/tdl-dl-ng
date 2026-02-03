@@ -6,7 +6,7 @@
 import { getValidToken, isAuthenticated, startDeviceAuth, pollForToken, clearAuth, fetchUserInfo } from './auth';
 import { search as tidalSearch, parseTidalUrl } from './tidal-client';
 import { getSettings, saveSettings, TidalSettings } from './settings';
-import { downloadTrack, DownloadProgress } from './downloader';
+import { downloadTrack, DownloadProgress } from '@/lib/downloader';
 
 // Environment detection
 const isServerless = process.env.NEXT_PUBLIC_SERVERLESS === 'true' || typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
