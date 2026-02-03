@@ -23,6 +23,7 @@ export default function LoginPage() {
     const [authData, setAuthData] = useState<DeviceAuthData | null>(null);
     const [copied, setCopied] = useState(false);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const loginSuccessRef = useRef(false); // Flag to prevent polling after success
 
     const router = useRouter();
 
@@ -49,18 +50,27 @@ export default function LoginPage() {
 
     const startPolling = (deviceCode: string, intervalSeconds: number) => {
         if (pollingRef.current) clearInterval(pollingRef.current);
+        loginSuccessRef.current = false; // Reset on new polling session
 
         addLog(`Waiting for approval... Polling every ${intervalSeconds}s`);
 
         pollingRef.current = setInterval(async () => {
+            // Skip if login already succeeded
+            if (loginSuccessRef.current) {
+                if (pollingRef.current) clearInterval(pollingRef.current);
+                return;
+            }
+
             try {
                 const result = await api.pollLogin(deviceCode);
 
                 if (result.success) {
+                    // Set flag immediately to prevent any more polling
+                    loginSuccessRef.current = true;
+                    if (pollingRef.current) clearInterval(pollingRef.current);
+
                     addLog("Login Successful!");
                     addLog("Redirecting to dashboard...");
-
-                    if (pollingRef.current) clearInterval(pollingRef.current);
 
                     // Small delay to let user see success message
                     setTimeout(() => {

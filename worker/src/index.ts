@@ -75,8 +75,8 @@ async function handleTokenPoll(request: Request, env: Env, origin: string): Prom
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-            client_id: env.TIDAL_CLIENT_ID,
-            client_secret: env.TIDAL_CLIENT_SECRET,
+            client_id: 'fX2JxdmntZWK0ixT',
+            client_secret: '1Nn9AfDAjxrgJFJbKNWLeAyKGVGGmINuXPPLHVXAvxAg=',
             device_code: body.device_code,
             grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
             scope: 'r_usr w_usr',
@@ -210,6 +210,25 @@ export default {
             // Health check
             if (pathname === '/health') {
                 return new Response(JSON.stringify({ status: 'ok' }), {
+                    headers: {
+                        ...corsHeaders(origin, env),
+                        'Content-Type': 'application/json',
+                    },
+                });
+            }
+
+            // Debug Environment
+            if (pathname === '/debug-env') {
+                const clientId = env.TIDAL_CLIENT_ID;
+                const secret = env.TIDAL_CLIENT_SECRET;
+                return new Response(JSON.stringify({
+                    clientId: clientId,
+                    secretLength: secret ? secret.length : 0,
+                    secretStart: secret ? secret.substring(0, 5) : 'null',
+                    secretEnd: secret ? secret.substring(secret.length - 5) : 'null',
+                    secretB64: secret ? btoa(secret) : 'null', // safety check if it handles binary? no it's string.
+                    allowedOrigins: env.ALLOWED_ORIGINS
+                }), {
                     headers: {
                         ...corsHeaders(origin, env),
                         'Content-Type': 'application/json',
