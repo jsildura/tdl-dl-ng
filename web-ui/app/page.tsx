@@ -74,7 +74,7 @@ export default function Home() {
         (progress) => {
           setDownloadProgress(progress);
         }
-      ) as any; // Cast to any to access the custom return type we added
+      ) as { status: string; type?: string; data?: TidalTrack | TidalAlbum | TidalPlaylist };
 
       // Add to history if successful
       if (result.status === 'completed' && result.data) {

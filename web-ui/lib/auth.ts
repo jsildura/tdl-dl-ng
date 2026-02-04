@@ -37,7 +37,6 @@ const USER_STORAGE_KEY = 'tidal-dl-ng-user';
 function getWorkerUrl(): string {
     if (typeof window !== 'undefined') {
         // Check for environment variable (set during build)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const envUrl = (window as unknown as { __NEXT_PUBLIC_WORKER_URL__?: string }).__NEXT_PUBLIC_WORKER_URL__;
         if (envUrl) return envUrl;
     }

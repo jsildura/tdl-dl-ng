@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 
 export function useSSE<T = unknown>(url: string) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [data, setData] = useState<T | null>(null);
     const [error, setError] = useState<Event | null>(null);
     const [connected, setConnected] = useState(false);

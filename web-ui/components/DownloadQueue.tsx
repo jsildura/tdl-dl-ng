@@ -17,17 +17,6 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
         return progress.progress;
     };
 
-    const getStatusColor = () => {
-        if (!progress) return 'bg-gray-700';
-        switch (progress.stage) {
-            case 'fetching': return 'bg-blue-500';
-            case 'processing': return 'bg-cyan-500';
-            case 'complete': return 'bg-green-500';
-            case 'error': return 'bg-red-500';
-            default: return 'bg-gray-700';
-        }
-    };
-
     const getStatusText = () => {
         if (!progress) return 'Disconnected';
         switch (progress.stage) {
