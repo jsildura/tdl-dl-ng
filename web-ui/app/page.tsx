@@ -38,7 +38,9 @@ export default function Home() {
     const saved = localStorage.getItem('download_history');
     if (saved) {
       try {
-        setHistory(JSON.parse(saved));
+        // Limit to 5 most recent entries
+        const parsed = JSON.parse(saved);
+        setHistory(Array.isArray(parsed) ? parsed.slice(0, 5) : []);
       } catch (e) {
         console.error('Failed to parse history', e);
       }
@@ -47,7 +49,8 @@ export default function Home() {
 
   const addToHistory = (item: DownloadHistoryItem) => {
     setHistory(prev => {
-      const newHistory = [item, ...prev];
+      // Limit to 5 most recent entries
+      const newHistory = [item, ...prev].slice(0, 5);
       localStorage.setItem('download_history', JSON.stringify(newHistory));
       return newHistory;
     });
@@ -132,10 +135,16 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
+    // Show confirmation dialog
+    if (!confirm('Are you sure you want to logout?')) {
+      return;
+    }
+
     try {
       const result = await api.logout();
       if (result.success) {
         setStatus({ logged_in: false, username: undefined, email: undefined });
+        alert('You have been logged out successfully.');
       } else {
         setError("Logout failed");
       }
@@ -159,19 +168,19 @@ export default function Home() {
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="text-sm font-medium text-error hover:bg-error-container/20 px-3 py-1.5 rounded-full transition-colors duration-200"
+                  className="text-sm font-medium text-error hover:bg-error-container/20 px-3 py-1.5 rounded-full transition-colors duration-200 cursor-pointer"
                 >
                   Logout
                 </button>
+                <a href="/settings" className="text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest px-4 py-2 rounded-full transition-colors duration-200">
+                  Settings
+                </a>
               </>
             ) : (
               <a href="/login" className="text-sm font-medium text-primary hover:bg-primary-container/20 px-4 py-2 rounded-full transition-colors duration-200">
                 Login
               </a>
             )}
-            <a href="/settings" className="text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest px-4 py-2 rounded-full transition-colors duration-200">
-              Settings
-            </a>
           </div>
 
           {/* Mobile Hamburger Menu */}
@@ -211,9 +220,6 @@ export default function Home() {
                     <a href="/login" className="block px-4 py-2 text-sm font-medium text-primary hover:bg-primary-container/20 rounded-xl transition-colors">
                       Login
                     </a>
-                    <a href="/settings" className="block px-4 py-2 text-sm text-on-surface hover:bg-surface-container-highest rounded-xl transition-colors">
-                      Settings
-                    </a>
                   </>
                 )}
               </div>
@@ -221,14 +227,14 @@ export default function Home() {
           </div>
 
           <div className="space-y-4 pt-8">
-            <h1 className="text-5xl md:text-6xl font-normal tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary pb-2">
+            <h1 className="text-2xl md:text-6xl font-bold tracking-tight text-white pb-2">
               Tidal Downloader Web
             </h1>
-            <p className="text-lg md:text-xl text-on-surface-variant max-w-lg mx-auto leading-relaxed">
+            <p className="text-sm md:text-xl text-on-surface-variant max-w-lg mx-auto leading-relaxed">
               Next Generation Downloader for Tidal
             </p>
             {api.isServerless() && (
-              <span className="inline-flex items-center px-3 py-1 text-sm font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
+              <span className="inline-flex items-center px-3 py-1 text-xs font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
                 Serverless
               </span>
             )}
@@ -239,14 +245,14 @@ export default function Home() {
           <UrlInput onDownload={handleUrlDownload} isLoading={isLoading} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-            <div className="space-y-6">
-              <h2 className="text-2xl font-normal text-on-surface">Downloads</h2>
+            <div className="space-y-2">
+              <h2 className="text-base md:text-2xl font-normal text-on-surface">Downloads</h2>
               <DownloadQueue progress={downloadProgress} />
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-normal text-on-surface">Download History</h2>
+                <h2 className="text-base md:text-2xl font-normal text-on-surface">Recent Download</h2>
                 {history.length > 0 && (
                   <button
                     onClick={clearHistory}

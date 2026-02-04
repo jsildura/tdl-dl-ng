@@ -26,7 +26,7 @@ export function UrlInput({ onDownload, isLoading }: UrlInputProps) {
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="Paste Tidal URL (https://tidal.com/track/119626470)..."
-                    className="w-full px-12 py-4 rounded-full bg-surface-container-high text-on-surface placeholder:text-on-surface-variant/70 border-none outline-none ring-1 ring-transparent focus:ring-2 focus:ring-primary transition-all duration-200 shadow-sm"
+                    className="w-full pl-12 pr-40 py-4 text-sm rounded-full bg-surface-container-high text-on-surface placeholder:text-on-surface-variant/70 border-none outline-none ring-1 ring-transparent focus:ring-2 focus:ring-primary transition-all duration-200 shadow-sm"
                     disabled={isLoading}
                 />
                 <Link className="absolute left-4 top-1/2 transform -translate-y-1/2 text-on-surface-variant w-6 h-6" />

@@ -37,6 +37,30 @@ export default function RootLayout({
              `
           }}
         />
+        <script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof DisableDevtool !== 'undefined') {
+                // Skip disable-devtool on localhost for development
+                var isLocalhost = window.location.hostname === 'localhost' || 
+                                  window.location.hostname === '127.0.0.1' ||
+                                  window.location.hostname === '0.0.0.0';
+                if (!isLocalhost) {
+                  DisableDevtool({
+                    url: window.location.href,
+                    disableMenu: true,
+                    clearLog: true,
+                    disableSelect: false,
+                    disableCopy: false,
+                    disableCut: false,
+                    disablePaste: false
+                  });
+                }
+              }
+            `
+          }}
+        />
         {children}
       </body>
     </html>

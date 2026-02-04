@@ -254,6 +254,45 @@ export default {
                 return handleStreamUrl(request, env, origin);
             }
 
+            // Cover art proxy endpoint
+            if (pathname === '/cover') {
+                const coverId = url.searchParams.get('id');
+                const size = url.searchParams.get('size') || '640';
+
+                if (!coverId) {
+                    return new Response(JSON.stringify({ error: 'Missing cover id' }), {
+                        status: 400,
+                        headers: {
+                            ...corsHeaders(origin, env),
+                            'Content-Type': 'application/json',
+                        },
+                    });
+                }
+
+                const formattedId = coverId.replace(/-/g, '/');
+                const coverUrl = `https://resources.tidal.com/images/${formattedId}/${size}x${size}.jpg`;
+
+                const coverResponse = await fetch(coverUrl);
+
+                if (!coverResponse.ok) {
+                    return new Response(JSON.stringify({ error: 'Failed to fetch cover' }), {
+                        status: coverResponse.status,
+                        headers: {
+                            ...corsHeaders(origin, env),
+                            'Content-Type': 'application/json',
+                        },
+                    });
+                }
+
+                return new Response(coverResponse.body, {
+                    headers: {
+                        ...corsHeaders(origin, env),
+                        'Content-Type': 'image/jpeg',
+                        'Cache-Control': 'public, max-age=86400',
+                    },
+                });
+            }
+
             // Proxy all other /api/* requests to Tidal
             if (pathname.startsWith('/api/')) {
                 const tidalPath = pathname.replace('/api', '');

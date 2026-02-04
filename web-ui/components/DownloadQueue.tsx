@@ -44,25 +44,29 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
     return (
         <div className="bg-surface-container rounded-3xl p-6 shadow-md transition-shadow hover:shadow-lg">
             <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-medium text-on-surface flex items-center gap-3">
+                <h3 className="text-base md:text-xl font-medium text-on-surface flex items-center gap-3">
                     <Activity className="w-6 h-6 text-primary" />
                     Active Download
                 </h3>
-                <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
                     {progress ? getStatusText() : 'Idle'}
                 </span>
             </div>
 
             {progress ? (
                 <div className="space-y-4">
-                    {/* Multi-track indicator */}
-                    {isMultiTrack && (
+                    {/* Track info - show for both single and multi-track downloads */}
+                    {(isMultiTrack || progress.trackName) && (
                         <div className="flex items-center justify-between text-sm">
-                            <span className="text-tertiary font-medium">
-                                Track {progress.currentTrack}/{progress.totalTracks}
-                            </span>
+                            {isMultiTrack ? (
+                                <span className="text-tertiary font-medium">
+                                    Track {progress.currentTrack}/{progress.totalTracks}
+                                </span>
+                            ) : (
+                                <span className="text-tertiary font-medium">Track</span>
+                            )}
                             {progress.trackName && (
-                                <span className="text-on-surface-variant truncate max-w-[60%] text-right font-medium">
+                                <span className="text-on-surface-variant truncate max-w-[70%] text-right font-medium">
                                     {progress.trackName}
                                 </span>
                             )}
@@ -75,7 +79,7 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
                     </div>
                     <div className="w-full bg-surface-container-highest rounded-full h-2 overflow-hidden">
                         <div
-                            className={`h-full rounded-full transition-all duration-300 ease-in-out ${progress.stage === 'error' ? 'bg-error' : 'bg-primary'}`}
+                            className={`h-full rounded-full transition-all duration-300 ease-in-out ${progress.stage === 'error' ? 'bg-error' : 'bg-green-500'}`}
                             style={{ width: `${getProgressPercent()}%` }}
                         />
                     </div>

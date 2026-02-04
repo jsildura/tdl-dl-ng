@@ -2,23 +2,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getSettings, saveSettings, TidalSettings } from "@/lib/settings";
+import { isAuthenticated } from "@/lib/auth";
 import { Save, CheckCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function SettingsPage() {
+    const router = useRouter();
     const [settings, setSettings] = useState<TidalSettings | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
 
     useEffect(() => {
+        // Check if user is authenticated
+        if (!isAuthenticated()) {
+            alert('Please login to access settings.');
+            router.push('/login');
+            return;
+        }
+
         // Load settings from localStorage
         const loaded = getSettings();
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSettings(loaded);
         setIsLoading(false);
-    }, []);
+    }, [router]);
 
     const handleChange = (key: keyof TidalSettings, value: string | boolean) => {
         setSettings((prev) => prev ? { ...prev, [key]: value } : null);

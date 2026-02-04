@@ -5,7 +5,7 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import JSZip from 'jszip';
-import { getStreamInfo, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getCoverUrl, getLyrics, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
+import { getStreamInfo, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getCoverUrl, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
 import { getSettings } from './settings';
 
 
@@ -104,6 +104,56 @@ async function downloadWithProgress(
 }
 
 /**
+ * Download multiple segments and combine them
+ */
+async function downloadSegments(
+    urls: string[],
+    onProgress?: ProgressCallback
+): Promise<Uint8Array> {
+    const totalSegments = urls.length;
+    const downloadedChunks: Uint8Array[] = [];
+    let totalLength = 0;
+
+    for (let i = 0; i < totalSegments; i++) {
+        const url = urls[i];
+
+        // Download each segment and properly await the result
+        const buffer = await downloadWithProgress(url, (p) => {
+            if (p.stage === 'fetching') {
+                // Calculate overall progress based on current segment
+                const segmentProgress = p.progress; // 0-100
+                const overallProgress = Math.round(((i / totalSegments) * 100) + ((segmentProgress / totalSegments)));
+
+                onProgress?.({
+                    ...p,
+                    progress: overallProgress,
+                    message: `Downloading segment ${i + 1}/${totalSegments}...`
+                });
+            }
+        });
+
+        // Store the downloaded chunk
+        const chunk = new Uint8Array(buffer);
+        downloadedChunks.push(chunk);
+        totalLength += chunk.length;
+
+        console.log(`Segment ${i + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
+    }
+
+    console.log(`All segments downloaded. Total size: ${totalLength} bytes`);
+
+    // Combine all chunks
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of downloadedChunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
+    }
+
+    return combined;
+}
+
+/**
  * Format track metadata for filename
  */
 function formatFilename(track: TidalTrack): string {
@@ -126,9 +176,11 @@ async function embedMetadata(
     ffmpegInstance: FFmpeg,
     audioData: Uint8Array,
     track: TidalTrack,
+    album: TidalAlbum | null,
     coverData: Uint8Array | null,
     lyrics: string | null,
     inputFormat: string,
+    outputFormat: string, // 'flac' or 'm4a'
     onProgress?: ProgressCallback
 ): Promise<Uint8Array> {
     const settings = getSettings();
@@ -136,7 +188,9 @@ async function embedMetadata(
     onProgress?.({ stage: 'processing', progress: 50, message: 'Embedding metadata...' });
 
     const inputFile = `input.${inputFormat}`;
-    const outputFile = inputFormat === 'flac' ? 'output.flac' : 'output.m4a';
+    const outputFile = `output.${outputFormat}`;
+
+    console.log(`FFmpeg processing: ${inputFile} -> ${outputFile}`);
 
     // Write input file
     await ffmpegInstance.writeFile(inputFile, audioData);
@@ -144,6 +198,7 @@ async function embedMetadata(
     // Prepare metadata arguments
     const metadataArgs: string[] = [];
 
+    // Basic metadata
     if (track.title) {
         metadataArgs.push('-metadata', `title=${track.title}`);
     }
@@ -153,11 +208,56 @@ async function embedMetadata(
     if (track.album?.title) {
         metadataArgs.push('-metadata', `album=${track.album.title}`);
     }
+
+    // Track number with total (format: trackNumber/totalTracks for M4A compatibility)
     if (track.trackNumber) {
-        metadataArgs.push('-metadata', `track=${track.trackNumber}`);
+        if (album?.numberOfTracks) {
+            metadataArgs.push('-metadata', `track=${track.trackNumber}/${album.numberOfTracks}`);
+        } else {
+            metadataArgs.push('-metadata', `track=${track.trackNumber}`);
+        }
     }
+
     if (track.explicit) {
         metadataArgs.push('-metadata', `explicit=1`);
+    }
+
+    // Album artist (Album/Performer)
+    if (album?.artist?.name) {
+        metadataArgs.push('-metadata', `album_artist=${album.artist.name}`);
+    }
+
+    // Disc number with total (format: discNumber/totalDiscs for M4A compatibility)
+    if (track.volumeNumber) {
+        if (album?.numberOfVolumes) {
+            metadataArgs.push('-metadata', `disc=${track.volumeNumber}/${album.numberOfVolumes}`);
+        } else {
+            metadataArgs.push('-metadata', `disc=${track.volumeNumber}`);
+        }
+    }
+
+    // Release date (Recorded date)
+    if (album?.releaseDate) {
+        metadataArgs.push('-metadata', `date=${album.releaseDate}`);
+    }
+
+    // Copyright
+    const copyrightInfo = track.copyright || album?.copyright;
+    if (copyrightInfo) {
+        metadataArgs.push('-metadata', `copyright=${copyrightInfo}`);
+    }
+
+    // Track URL (Title/Url in MediaInfo)
+    metadataArgs.push('-metadata', `comment=https://tidal.com/browse/track/${track.id}`);
+
+    // UPC (album barcode) - use lowercase for better compatibility
+    if (album?.upc) {
+        metadataArgs.push('-metadata', `upc=${album.upc}`);
+    }
+
+    // ISRC (track identifier) - use lowercase for better compatibility
+    if (track.isrc) {
+        metadataArgs.push('-metadata', `isrc=${track.isrc}`);
     }
 
     // Build FFmpeg command
@@ -182,22 +282,46 @@ async function embedMetadata(
 
     // Add lyrics if available and enabled (must be added to metadataArgs BEFORE spreading)
     if (lyrics && settings.lyrics_embed) {
-        // Use LYRICS tag for synced/LRC format lyrics, and lyrics-XXX for plain text
         // Escape special characters for FFmpeg metadata
         // Note: We do NOT escape newlines (\n) because we want actual line breaks, 
         // not literal "\n" characters in the output.
         const escapedLyrics = lyrics.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;');
+
+        // Add synced lyrics (with timestamps) as LYRICS tag
         metadataArgs.push('-metadata', `LYRICS=${escapedLyrics}`);
-        // Also add as unsyncedlyrics for compatibility with more players
-        metadataArgs.push('-metadata', `UNSYNCEDLYRICS=${escapedLyrics}`);
+
+        // Generate unsynced lyrics by stripping timestamps [MM:SS.ss] from synced lyrics
+        // Regex matches patterns like [00:15.16] at the start of lines
+        const unsyncedLyrics = lyrics
+            .replace(/\[[\d:.]+\]\s*/g, '')  // Remove timestamp patterns
+            .replace(/\n+/g, ' / ')           // Replace newlines with " / " separator
+            .replace(/\s+/g, ' ')             // Normalize whitespace
+            .trim();
+
+        if (unsyncedLyrics) {
+            const escapedUnsyncedLyrics = unsyncedLyrics.replace(/\\/g, '\\\\').replace(/=/g, '\\=').replace(/;/g, '\\;');
+            metadataArgs.push('-metadata', `UNSYNCEDLYRICS=${escapedUnsyncedLyrics}`);
+        }
     }
 
     // Add metadata
     ffmpegArgs.push(...metadataArgs);
 
-    // Copy audio codec (no re-encoding)
-    ffmpegArgs.push('-c:a', 'copy');
+    // For fMP4 to FLAC conversion, we need to extract the FLAC audio from the MP4 container
+    // The fMP4 contains FLAC-encoded audio, so we can copy it directly
+    // For same-format operations, just copy the audio stream
+    if (inputFormat === 'mp4' && outputFormat === 'flac') {
+        // Extract FLAC from fragmented MP4 container
+        // Use copy to avoid re-encoding since the audio is already FLAC
+        ffmpegArgs.push('-c:a', 'copy');
+    } else {
+        // Copy audio codec (no re-encoding)
+        ffmpegArgs.push('-c:a', 'copy');
+    }
+
     ffmpegArgs.push(outputFile);
+
+    console.log('FFmpeg command args:', ffmpegArgs.join(' '));
 
     // Execute FFmpeg
     await ffmpegInstance.exec(ffmpegArgs);
@@ -233,22 +357,36 @@ export async function downloadTrack(
 
         // Get track metadata
         const track = await getTrack(trackId);
+        const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
 
-        onProgress?.({ stage: 'fetching', progress: 10, message: 'Getting stream URL...' });
+        onProgress?.({ stage: 'fetching', progress: 5, message: 'Fetching album info...', trackName });
+
+        // Get full album metadata for additional fields (upc, copyright, releaseDate, etc.)
+        let album: TidalAlbum | null = null;
+        if (track.album?.id) {
+            try {
+                album = await getAlbum(track.album.id);
+            } catch (e) {
+                console.warn('Failed to fetch album info:', e);
+            }
+        }
+
+        onProgress?.({ stage: 'fetching', progress: 10, message: 'Getting stream URL...', trackName });
 
         // Get stream URL
         const streamInfo = await getStreamInfo(trackId);
 
-        if (!streamInfo.streamUrl) {
+        if (!streamInfo.streamUrl && (!streamInfo.streamUrls || streamInfo.streamUrls.length === 0)) {
             throw new Error('Could not get stream URL');
         }
 
-        // Get cover art
+        // Get cover art (through proxy to avoid CORS/timeout issues)
         let coverData: Uint8Array | null = null;
         if (settings.metadata_cover_embed && track.album?.cover) {
             try {
-                const coverUrl = getCoverUrl(track.album.cover, parseInt(settings.metadata_cover_dimension));
-                const coverResponse = await fetch(coverUrl);
+                const workerUrl = getWorkerUrl();
+                const coverProxyUrl = `${workerUrl}/cover?id=${track.album.cover}&size=${settings.metadata_cover_dimension}`;
+                const coverResponse = await fetch(coverProxyUrl);
                 if (coverResponse.ok) {
                     coverData = new Uint8Array(await coverResponse.arrayBuffer());
                 }
@@ -263,47 +401,85 @@ export async function downloadTrack(
             lyrics = await getLyrics(trackId);
         }
 
-        onProgress?.({ stage: 'fetching', progress: 20, message: 'Downloading audio...' });
+        onProgress?.({ stage: 'fetching', progress: 20, message: 'Downloading audio...', trackName });
 
         // Download audio file
-        const audioBuffer = await downloadWithProgress(streamInfo.streamUrl, (p) => {
-            if (p.stage === 'fetching') {
-                // Scale to 20-80%
-                const scaled = 20 + (p.progress * 0.6);
-                onProgress?.({ ...p, progress: scaled });
-            }
+        let audioBuffer: ArrayBufferLike;
+
+        console.log('Stream info in downloadTrack:', {
+            hasStreamUrl: !!streamInfo.streamUrl,
+            streamUrlSample: streamInfo.streamUrl?.substring(0, 50),
+            hasStreamUrls: !!streamInfo.streamUrls,
+            streamUrlsLength: streamInfo.streamUrls?.length || 0
         });
+
+        if (streamInfo.streamUrls && streamInfo.streamUrls.length > 0) {
+            console.log(`Downloading ${streamInfo.streamUrls.length} segments...`);
+            const segmentData = await downloadSegments(streamInfo.streamUrls, (p) => {
+                if (p.stage === 'fetching') {
+                    // Scale to 20-80%
+                    const scaled = 20 + (p.progress * 0.6);
+                    onProgress?.({ ...p, progress: scaled, trackName });
+                }
+            });
+            audioBuffer = segmentData.buffer;
+        } else if (streamInfo.streamUrl) {
+            audioBuffer = await downloadWithProgress(streamInfo.streamUrl, (p) => {
+                if (p.stage === 'fetching') {
+                    // Scale to 20-80%
+                    const scaled = 20 + (p.progress * 0.6);
+                    onProgress?.({ ...p, progress: scaled, trackName });
+                }
+            });
+        } else {
+            throw new Error('No stream URL available');
+        }
 
         const audioData = new Uint8Array(audioBuffer);
 
+        console.log('Audio data size before processing:', audioData.length, 'bytes');
+        console.log('Audio quality:', streamInfo.audioQuality);
+
         // Determine file format from quality
-        const isFlac = streamInfo.audioQuality === 'HI_RES' || streamInfo.audioQuality === 'LOSSLESS';
-        const inputFormat = isFlac ? 'flac' : 'm4a';
+        // HI_RES_LOSSLESS is FLAC wrapped in fMP4 container (from DASH segments)
+        // HI_RES and LOSSLESS are also high quality
+        const isHiRes = streamInfo.audioQuality === 'HI_RES_LOSSLESS' ||
+            streamInfo.audioQuality === 'HI_RES' ||
+            streamInfo.audioQuality === 'LOSSLESS';
+
+        // For segmented streams, input is fragmented MP4 containing FLAC
+        // For non-segmented streams, it might be direct FLAC or M4A
+        const isSegmented = streamInfo.streamUrls && streamInfo.streamUrls.length > 0;
+        const inputFormat = isSegmented ? 'mp4' : (isHiRes ? 'flac' : 'm4a');
+
+        console.log('Format detection:', { isHiRes, isSegmented, inputFormat });
 
         // Load FFmpeg and process
-        const ffmpegInstance = await loadFFmpeg(onProgress);
+        const ffmpegInstance = await loadFFmpeg((p) => onProgress?.({ ...p, trackName }));
 
         const processedData = await embedMetadata(
             ffmpegInstance,
             audioData,
             track,
+            album,
             coverData,
             lyrics,
             inputFormat,
-            onProgress
+            isHiRes ? 'flac' : 'm4a', // outputFormat
+            (p) => onProgress?.({ ...p, trackName })
         );
 
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Triggering save dialog...' });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Triggering save dialog...', trackName });
 
         // Create blob and trigger download
         // Create a new Uint8Array to ensure standard ArrayBuffer (not SharedArrayBuffer) for Blob compatibility
         const standardData = new Uint8Array(processedData);
 
         const blob = new Blob([standardData], {
-            type: isFlac ? 'audio/flac' : 'audio/mp4'
+            type: isHiRes ? 'audio/flac' : 'audio/mp4'
         });
 
-        const filename = `${formatFilename(track)}.${isFlac ? 'flac' : 'm4a'}`;
+        const filename = `${formatFilename(track)}.${isHiRes ? 'flac' : 'm4a'}`;
 
         // Trigger browser save dialog
         const url = URL.createObjectURL(blob);
@@ -318,7 +494,7 @@ export async function downloadTrack(
         // Cleanup URL after a delay
         setTimeout(() => URL.revokeObjectURL(url), 10000);
 
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName });
 
         return track;
 
@@ -345,15 +521,27 @@ export function isFFmpegLoaded(): boolean {
  * Used internally by downloadAlbum and downloadPlaylist
  * @param trackId - The track ID to process
  * @param prefetchedTrack - Optional pre-fetched track metadata (avoids extra API call)
+ * @param prefetchedAlbum - Optional pre-fetched album metadata for metadata embedding
  */
 async function processTrackData(
     trackId: string | number,
-    prefetchedTrack?: TidalTrack
+    prefetchedTrack?: TidalTrack,
+    prefetchedAlbum?: TidalAlbum | null
 ): Promise<{ data: Uint8Array; filename: string; track: TidalTrack }> {
     const settings = getSettings();
 
     // Use pre-fetched track metadata if available, otherwise fetch it
     const track = prefetchedTrack || await getTrack(trackId);
+
+    // Use pre-fetched album or fetch it for full metadata
+    let album: TidalAlbum | null = prefetchedAlbum ?? null;
+    if (!album && track.album?.id) {
+        try {
+            album = await getAlbum(track.album.id);
+        } catch (e) {
+            console.warn('Failed to fetch album info:', e);
+        }
+    }
 
     // Get stream URL
     const streamInfo = await getStreamInfo(trackId);
@@ -362,12 +550,13 @@ async function processTrackData(
         throw new Error('Could not get stream URL');
     }
 
-    // Get cover art
+    // Get cover art (through proxy to avoid CORS/timeout issues)
     let coverData: Uint8Array | null = null;
     if (settings.metadata_cover_embed && track.album?.cover) {
         try {
-            const coverUrl = getCoverUrl(track.album.cover, parseInt(settings.metadata_cover_dimension));
-            const coverResponse = await fetch(coverUrl);
+            const workerUrl = getWorkerUrl();
+            const coverProxyUrl = `${workerUrl}/cover?id=${track.album.cover}&size=${settings.metadata_cover_dimension}`;
+            const coverResponse = await fetch(coverProxyUrl);
             if (coverResponse.ok) {
                 coverData = new Uint8Array(await coverResponse.arrayBuffer());
             }
@@ -387,15 +576,28 @@ async function processTrackData(
     }
 
     // Download audio file
-    const audioResponse = await fetch(streamInfo.streamUrl);
-    if (!audioResponse.ok) {
-        throw new Error(`Download failed: ${audioResponse.status}`);
+    let audioData: Uint8Array;
+
+    if (streamInfo.streamUrls && streamInfo.streamUrls.length > 0) {
+        // Segmented DASH stream
+        audioData = await downloadSegments(streamInfo.streamUrls);
+    } else if (streamInfo.streamUrl) {
+        const audioResponse = await fetch(streamInfo.streamUrl);
+        if (!audioResponse.ok) {
+            throw new Error(`Download failed: ${audioResponse.status}`);
+        }
+        audioData = new Uint8Array(await audioResponse.arrayBuffer());
+    } else {
+        throw new Error('No stream URL available');
     }
-    const audioData = new Uint8Array(await audioResponse.arrayBuffer());
 
     // Determine file format from quality
-    const isFlac = streamInfo.audioQuality === 'HI_RES' || streamInfo.audioQuality === 'LOSSLESS';
-    const inputFormat = isFlac ? 'flac' : 'm4a';
+    const isHiRes = streamInfo.audioQuality === 'HI_RES_LOSSLESS' ||
+        streamInfo.audioQuality === 'HI_RES' ||
+        streamInfo.audioQuality === 'LOSSLESS';
+    const isSegmented = streamInfo.streamUrls && streamInfo.streamUrls.length > 0;
+    const inputFormat = isSegmented ? 'mp4' : (isHiRes ? 'flac' : 'm4a');
+    const outputFormat = isHiRes ? 'flac' : 'm4a';
 
     // Load FFmpeg and process
     const ffmpegInstance = await loadFFmpeg();
@@ -404,12 +606,14 @@ async function processTrackData(
         ffmpegInstance,
         audioData,
         track,
+        album,
         coverData,
         lyrics,
-        inputFormat
+        inputFormat,
+        outputFormat
     );
 
-    const filename = `${formatFilename(track)}.${isFlac ? 'flac' : 'm4a'}`;
+    const filename = `${formatFilename(track)}.${outputFormat}`;
 
     return { data: new Uint8Array(processedData), filename, track };
 }
@@ -463,7 +667,7 @@ export async function downloadAlbum(
             });
 
             try {
-                const { data, filename } = await processTrackData(track.id, track);
+                const { data, filename } = await processTrackData(track.id, track, album);
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(track.trackNumber || currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
@@ -566,7 +770,7 @@ export async function downloadPlaylist(
             });
 
             try {
-                const { data, filename } = await processTrackData(track.id, track);
+                const { data, filename } = await processTrackData(track.id, track, null);
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);

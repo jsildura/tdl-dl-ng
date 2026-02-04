@@ -7,7 +7,7 @@ import { getValidToken } from './auth';
 import { getSettings } from './settings';
 
 // Get Worker URL from environment
-function getWorkerUrl(): string {
+export function getWorkerUrl(): string {
     return process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:8787';
 }
 
@@ -19,6 +19,8 @@ export interface TidalTrack {
     volumeNumber: number;
     explicit: boolean;
     audioQuality: string;
+    isrc?: string;
+    copyright?: string;
     artist: {
         id: number;
         name: string;
@@ -40,6 +42,8 @@ export interface TidalAlbum {
     explicit: boolean;
     audioQuality: string;
     releaseDate: string;
+    upc?: string;
+    copyright?: string;
     artist: {
         id: number;
         name: string;
@@ -71,6 +75,7 @@ export interface StreamInfo {
     manifestMimeType: string;
     // Decoded manifest will contain actual URL
     streamUrl?: string;
+    streamUrls?: string[];
 }
 
 /**
@@ -248,16 +253,102 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
     const data = await response.json();
 
+    console.log('Stream info response:', {
+        trackId: data.trackId,
+        audioQuality: data.audioQuality,
+        manifestMimeType: data.manifestMimeType,
+        manifestLength: data.manifest?.length
+    });
+
     // Decode manifest to get actual stream URL
     let streamUrl = '';
+    let streamUrls: string[] = [];
     if (data.manifestMimeType === 'application/vnd.tidal.bts') {
         // BTS manifest - base64 encoded JSON
         try {
             const manifestJson = JSON.parse(atob(data.manifest));
             streamUrl = manifestJson.urls?.[0] || '';
-        } catch {
-            console.error('Failed to decode manifest');
+            console.log('BTS manifest decoded, URL found:', !!streamUrl);
+        } catch (e) {
+            console.error('Failed to decode BTS manifest:', e);
         }
+    } else if (data.manifestMimeType === 'application/dash+xml') {
+        // DASH manifest - base64 encoded MPD XML (used for Hi-Res)
+        try {
+            const mpdXml = atob(data.manifest);
+            console.log('DASH manifest decoded, length:', mpdXml.length);
+
+            // Parse the MPD XML to extract the media URL
+            // The URL is typically in a <BaseURL> element or as a template
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(mpdXml, 'text/xml');
+
+            // Try to find BaseURL first (most common for Hi-Res FLAC)
+            const baseUrlElement = doc.querySelector('BaseURL');
+            if (baseUrlElement?.textContent) {
+                streamUrl = baseUrlElement.textContent;
+                console.log('Found BaseURL in DASH manifest');
+            } else {
+                // Fallback: Try to find SegmentTemplate with media attribute
+                const segmentTemplate = doc.querySelector('SegmentTemplate');
+                const initialization = segmentTemplate?.getAttribute('initialization');
+                const media = segmentTemplate?.getAttribute('media');
+
+                // Check if media URL has $Number$ placeholder - this means it's a segmented stream
+                if (media && media.includes('$Number$') && segmentTemplate) {
+                    console.log('Found segmented DASH stream with $Number$ template');
+
+                    // Calculate number of segments from SegmentTimeline
+                    const S_elements = segmentTemplate.querySelectorAll('SegmentTimeline S');
+
+                    // CLI logic: segments_count = 1 + 1 (min), then add repeats
+                    let totalCount = 2; // Init + First media
+                    S_elements.forEach(S => {
+                        const r = parseInt(S.getAttribute('r') || '0', 10);
+                        if (r > 0) totalCount += r;
+                    });
+
+                    console.log('Calculated segment count:', totalCount);
+
+                    // Generate URLs by replacing $Number$ with actual segment numbers
+                    const urls: string[] = [];
+                    for (let i = 0; i < totalCount; i++) {
+                        urls.push(media.replace('$Number$', i.toString()));
+                    }
+
+                    if (urls.length > 0) {
+                        streamUrls = urls;
+                        streamUrl = urls[0]; // Set first as primary for back-compat
+                        console.log(`Generated ${urls.length} DASH segment URLs`);
+                    }
+                } else if (media) {
+                    // Non-segmented media URL (no $Number$ placeholder)
+                    streamUrl = media;
+                    console.log('Using SegmentTemplate media URL for Hi-Res stream');
+                } else if (initialization) {
+                    // Some streams might only have initialization URL
+                    streamUrl = initialization;
+                    console.log('Using SegmentTemplate initialization URL');
+                }
+
+                // Also check Representation with BaseURL as final fallback
+                if (!streamUrl && !streamUrls?.length) {
+                    const representation = doc.querySelector('Representation BaseURL');
+                    if (representation?.textContent) {
+                        streamUrl = representation.textContent;
+                        console.log('Found Representation BaseURL in DASH manifest');
+                    }
+                }
+            }
+
+            if (!streamUrl && !streamUrls?.length) {
+                console.error('Could not extract URL from DASH manifest. MPD content:', mpdXml.substring(0, 500));
+            }
+        } catch (e) {
+            console.error('Failed to decode DASH manifest:', e);
+        }
+    } else {
+        console.warn('Unknown manifest type:', data.manifestMimeType);
     }
 
     return {
@@ -266,6 +357,7 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         manifest: data.manifest,
         manifestMimeType: data.manifestMimeType,
         streamUrl,
+        streamUrls
     };
 }
 
