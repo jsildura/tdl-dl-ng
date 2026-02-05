@@ -105,52 +105,112 @@ async function downloadWithProgress(
 
 /**
  * Download multiple segments and combine them
+ * Supports concurrent downloads when multi_thread_download is enabled
  */
 async function downloadSegments(
     urls: string[],
     onProgress?: ProgressCallback
 ): Promise<Uint8Array> {
+    const settings = getSettings();
     const totalSegments = urls.length;
-    const downloadedChunks: Uint8Array[] = [];
-    let totalLength = 0;
 
-    for (let i = 0; i < totalSegments; i++) {
-        const url = urls[i];
+    if (settings.multi_thread_download) {
+        // Concurrent download with limited parallelism
+        const CONCURRENCY_LIMIT = 6;
+        const downloadedChunks: (Uint8Array | null)[] = new Array(totalSegments).fill(null);
+        let completedSegments = 0;
 
-        // Download each segment and properly await the result
-        const buffer = await downloadWithProgress(url, (p) => {
-            if (p.stage === 'fetching') {
-                // Calculate overall progress based on current segment
-                const segmentProgress = p.progress; // 0-100
-                const overallProgress = Math.round(((i / totalSegments) * 100) + ((segmentProgress / totalSegments)));
+        // Process segments in batches
+        for (let batchStart = 0; batchStart < totalSegments; batchStart += CONCURRENCY_LIMIT) {
+            const batchEnd = Math.min(batchStart + CONCURRENCY_LIMIT, totalSegments);
+            const batchPromises: Promise<void>[] = [];
 
-                onProgress?.({
-                    ...p,
-                    progress: overallProgress,
-                    message: `Downloading segment ${i + 1}/${totalSegments}...`
+            for (let i = batchStart; i < batchEnd; i++) {
+                const url = urls[i];
+                const segmentIndex = i;
+
+                const downloadPromise = downloadWithProgress(url).then((buffer) => {
+                    const chunk = new Uint8Array(buffer);
+                    downloadedChunks[segmentIndex] = chunk;
+                    completedSegments++;
+
+                    const overallProgress = Math.round((completedSegments / totalSegments) * 100);
+                    onProgress?.({
+                        stage: 'fetching',
+                        progress: overallProgress,
+                        message: `Downloading segments... ${completedSegments}/${totalSegments}`
+                    });
+
+                    console.log(`Segment ${segmentIndex + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
                 });
+
+                batchPromises.push(downloadPromise);
             }
-        });
 
-        // Store the downloaded chunk
-        const chunk = new Uint8Array(buffer);
-        downloadedChunks.push(chunk);
-        totalLength += chunk.length;
+            await Promise.all(batchPromises);
+        }
 
-        console.log(`Segment ${i + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
+        // Combine all chunks in order
+        let totalLength = 0;
+        for (const chunk of downloadedChunks) {
+            if (chunk) totalLength += chunk.length;
+        }
+
+        console.log(`All segments downloaded (multi-thread). Total size: ${totalLength} bytes`);
+
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of downloadedChunks) {
+            if (chunk) {
+                combined.set(chunk, offset);
+                offset += chunk.length;
+            }
+        }
+
+        return combined;
+    } else {
+        // Sequential download (original behavior)
+        const downloadedChunks: Uint8Array[] = [];
+        let totalLength = 0;
+
+        for (let i = 0; i < totalSegments; i++) {
+            const url = urls[i];
+
+            // Download each segment and properly await the result
+            const buffer = await downloadWithProgress(url, (p) => {
+                if (p.stage === 'fetching') {
+                    // Calculate overall progress based on current segment
+                    const segmentProgress = p.progress; // 0-100
+                    const overallProgress = Math.round(((i / totalSegments) * 100) + ((segmentProgress / totalSegments)));
+
+                    onProgress?.({
+                        ...p,
+                        progress: overallProgress,
+                        message: `Downloading segment ${i + 1}/${totalSegments}...`
+                    });
+                }
+            });
+
+            // Store the downloaded chunk
+            const chunk = new Uint8Array(buffer);
+            downloadedChunks.push(chunk);
+            totalLength += chunk.length;
+
+            console.log(`Segment ${i + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
+        }
+
+        console.log(`All segments downloaded. Total size: ${totalLength} bytes`);
+
+        // Combine all chunks
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of downloadedChunks) {
+            combined.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        return combined;
     }
-
-    console.log(`All segments downloaded. Total size: ${totalLength} bytes`);
-
-    // Combine all chunks
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of downloadedChunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-    }
-
-    return combined;
 }
 
 /**
@@ -636,6 +696,8 @@ export async function downloadAlbum(
             throw new Error('Album has no tracks');
         }
 
+        const settings = getSettings();
+
         const totalTracks = tracks.length;
         const zip = new JSZip();
         const albumFolder = `${album.artist?.name || 'Unknown Artist'} - ${album.title || 'Unknown Album'}`
@@ -671,6 +733,11 @@ export async function downloadAlbum(
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(track.trackNumber || currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
+
+                // Add delay between tracks when multi-thread download is enabled to prevent rate limiting
+                if (settings.multi_thread_download && i < tracks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
             } catch (error) {
                 console.error(`Failed to download track ${track.id}:`, error);
                 // Continue with other tracks
@@ -736,6 +803,8 @@ export async function downloadPlaylist(
             throw new Error('Playlist has no tracks');
         }
 
+        const settings = getSettings();
+
         const totalTracks = tracks.length;
         const zip = new JSZip();
 
@@ -774,6 +843,11 @@ export async function downloadPlaylist(
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
+
+                // Add delay between tracks when multi-thread download is enabled to prevent rate limiting
+                if (settings.multi_thread_download && i < tracks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
             } catch (error) {
                 console.error(`Failed to download track ${track.id}:`, error);
                 // Continue with other tracks

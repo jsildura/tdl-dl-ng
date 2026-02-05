@@ -183,6 +183,26 @@ export default function SettingsPage() {
                                     Skip downloading existing files
                                 </span>
                             </label>
+
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                                <div className="relative flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.multi_thread_download}
+                                        onChange={(e) => handleChange("multi_thread_download", e.target.checked)}
+                                        className="peer h-4.5 w-4.5 cursor-pointer appearance-none rounded-md border-2 border-on-surface-variant transition-all checked:border-primary checked:bg-primary hover:border-primary focus:ring-2 focus:ring-primary/20"
+                                    />
+                                    <CheckCircle className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 text-on-primary opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm text-on-surface group-hover:text-primary transition-colors">
+                                        Multi-thread download (faster)
+                                    </span>
+                                    <span className="text-xs text-on-surface-variant/60">
+                                        Downloads segments in parallel. Adds 5s delay between tracks to prevent rate limiting.
+                                    </span>
+                                </div>
+                            </label>
                         </div>
                     </div>
 

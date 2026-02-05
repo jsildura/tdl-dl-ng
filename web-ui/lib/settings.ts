@@ -18,6 +18,7 @@ export interface TidalSettings {
     format_video: string;
     metadata_cover_dimension: string;
     metadata_cover_embed: boolean;
+    multi_thread_download: boolean;
 }
 
 export const DEFAULT_SETTINGS: TidalSettings = {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: TidalSettings = {
     format_video: 'Videos/{artist_name} - {track_title}',
     metadata_cover_dimension: '1280',
     metadata_cover_embed: true,
+    multi_thread_download: false,
 };
 
 const STORAGE_KEY = 'tidal-dl-ng-settings';
