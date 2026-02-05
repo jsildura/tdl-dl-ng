@@ -1,4 +1,5 @@
 # Cross-Origin headers for SharedArrayBuffer support (required for ffmpeg.wasm)
+# Using 'credentialless' instead of 'require-corp' to allow ad scripts while still enabling SharedArrayBuffer
 /*
   Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Embedder-Policy: credentialless
