@@ -12,7 +12,6 @@ import {
     updateDoc,
     setDoc,
     increment,
-    getDoc,
     query,
     orderBy,
     limit,
@@ -123,9 +122,11 @@ export async function incrementDownloadCount(): Promise<void> {
         await updateDoc(statsRef, {
             total_downloads: increment(1)
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         // If document doesn't exist (e.g., first run), create it
-        if (error.code === 'not-found' || error.message.includes('No document to update')) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCode = (error as { code?: string })?.code;
+        if (errorCode === 'not-found' || errorMessage.includes('No document to update')) {
             await setDoc(statsRef, {
                 total_downloads: 1
             });

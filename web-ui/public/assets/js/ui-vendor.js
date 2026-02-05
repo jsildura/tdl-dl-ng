@@ -384,7 +384,7 @@
                     if (count >= 2) {
                         iframeDetected = true;
                         this.createWarningModal();
-                        try { observer.disconnect(); } catch (e) { }
+                        try { observer.disconnect(); } catch { }
                         break;
                     }
                 }
