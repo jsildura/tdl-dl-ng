@@ -7,20 +7,13 @@ import { DownloadQueue } from "../components/DownloadQueue";
 import { api } from "../lib/api";
 import { DownloadProgress } from "../lib/downloader";
 import { TidalTrack, TidalAlbum, TidalPlaylist } from "../lib/tidal-client";
-import { Menu, X, Trash2 } from "lucide-react";
+import { addDownloadHistory, subscribeToDownloadHistory, incrementDownloadCount, subscribeToDownloadCount, DownloadHistoryItem } from "../lib/download-history";
+import { Menu, X } from "lucide-react";
 
 interface AuthStatus {
   logged_in: boolean;
   username?: string;
   email?: string;
-}
-
-interface DownloadHistoryItem {
-  id: string;
-  title: string;
-  artist: string;
-  type: 'Track' | 'Album' | 'Playlist';
-  date: string;
 }
 
 export default function Home() {
@@ -30,38 +23,38 @@ export default function Home() {
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
+  const [totalDownloads, setTotalDownloads] = useState<number>(0);
 
   useEffect(() => {
     api.checkStatus().then(setStatus).catch(console.error);
 
-    // Load history
-    const saved = localStorage.getItem('download_history');
-    if (saved) {
-      try {
-        // Limit to 5 most recent entries
-        const parsed = JSON.parse(saved);
-        setHistory(Array.isArray(parsed) ? parsed.slice(0, 5) : []);
-      } catch (e) {
-        console.error('Failed to parse history', e);
-      }
-    }
+    // Subscribe to real-time history updates from cloud
+    const unsubscribe = subscribeToDownloadHistory((items) => {
+      setHistory(items);
+    }, 5);
+
+    // Subscribe to total download count
+    const unsubscribeStats = subscribeToDownloadCount((count) => {
+      setTotalDownloads(count);
+    });
+
+    // Cleanup subscription on unmount
+    return () => {
+      unsubscribe();
+      unsubscribeStats();
+    };
   }, []);
 
-  const addToHistory = (item: DownloadHistoryItem) => {
-    setHistory(prev => {
-      // Limit to 5 most recent entries
-      const newHistory = [item, ...prev].slice(0, 5);
-      localStorage.setItem('download_history', JSON.stringify(newHistory));
-      return newHistory;
-    });
-  };
-
-  const clearHistory = () => {
-    if (confirm('Are you sure you want to clear your download history?')) {
-      setHistory([]);
-      localStorage.removeItem('download_history');
+  const addToHistory = async (item: Omit<DownloadHistoryItem, 'id' | 'timestamp'>) => {
+    try {
+      await addDownloadHistory(item);
+      // Real-time listener will automatically update the UI
+    } catch (error) {
+      console.error('Failed to add to history:', error);
     }
   };
+
+
 
   const handleUrlDownload = async (url: string) => {
     setIsLoading(true);
@@ -113,7 +106,8 @@ export default function Home() {
         }
 
         if (historyItem) {
-          addToHistory(historyItem);
+          await addToHistory(historyItem);
+          await incrementDownloadCount();
         }
       }
 
@@ -252,16 +246,10 @@ export default function Home() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-base md:text-2xl font-normal text-on-surface">Recent Download</h2>
-                {history.length > 0 && (
-                  <button
-                    onClick={clearHistory}
-                    className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/10 rounded-full transition-colors"
-                    title="Clear History"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                )}
+                <h2 className="text-base md:text-2xl font-normal text-on-surface">
+                  Recent Download
+                </h2>
+
               </div>
 
               {/* Status/Error messages still shown if present */}
@@ -312,6 +300,21 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Footer */}
+        <footer className="text-center pt-12 space-y-6">
+          {totalDownloads > 0 && (
+            <div>
+              <span className="inline-flex items-center text-sm font-medium text-primary px-4">
+                Current number of downloads: {totalDownloads}
+              </span>
+            </div>
+          )}
+
+          <p className="text-[10px] md:text-xs text-on-surface-variant/40 max-w-3xl mx-auto leading-relaxed px-4">
+            Tidal Downloader Web is intended strictly for private use and requires an active Tidal-HiFi subscription; users are prohibited from engaging in music piracy or distribution and are responsible for ensuring compliance with all applicable local laws.
+          </p>
+        </footer>
       </div>
     </main>
   );

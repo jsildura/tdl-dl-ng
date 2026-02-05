@@ -12,6 +12,7 @@
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
     "disable-devtool": "^0.3.9",
+    "firebase": "^12.8.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
@@ -25,6 +26,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "firebase-tools": "^15.5.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
