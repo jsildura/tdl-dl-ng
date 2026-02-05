@@ -20,6 +20,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="https://pl28650855.effectivegatecpm.com/5d/3f/6c/5d3f6cd061b197396c5d98f803d627a2.js"></script>
+      </head>
       <body
         className={`${roboto.variable} antialiased bg-background text-on-background`}
       >
