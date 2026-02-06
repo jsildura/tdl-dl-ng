@@ -370,7 +370,7 @@ export async function getStreamInfoAtmos(trackId: string | number): Promise<Stre
     // Decode manifest to get actual stream URL
     // Atmos streams use BTS manifest format
     let streamUrl = '';
-    let streamUrls: string[] = [];
+    const streamUrls: string[] = [];
     if (data.manifestMimeType === 'application/vnd.tidal.bts') {
         try {
             const manifestJson = JSON.parse(atob(data.manifest));
