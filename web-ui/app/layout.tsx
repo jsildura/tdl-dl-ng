@@ -41,7 +41,6 @@ export default function RootLayout({
              `
           }}
         />
-        {/* Temporarily disabled disable-devtool
         <script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" />
         <script
           dangerouslySetInnerHTML={{
@@ -66,7 +65,6 @@ export default function RootLayout({
             `
           }}
         />
-        */}
         {children}
       </body>
     </html>
