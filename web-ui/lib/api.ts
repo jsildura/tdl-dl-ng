@@ -106,13 +106,13 @@ export const api = {
         if (isServerless || isAuthenticated()) {
             if (trackId) {
                 const result = await downloadTrack(trackId, onProgress);
-                return { status: 'completed', type: 'TRACK', data: result };
+                return { status: 'completed', type: 'TRACK', data: result.track, isAtmos: result.isAtmos };
             } else if (albumId) {
                 const result = await downloadAlbum(albumId, onProgress);
-                return { status: 'completed', type: 'ALBUM', data: result };
+                return { status: 'completed', type: 'ALBUM', data: result.album, isAtmos: result.isAtmos };
             } else if (playlistId) {
                 const result = await downloadPlaylist(playlistId, onProgress);
-                return { status: 'completed', type: 'PLAYLIST', data: result };
+                return { status: 'completed', type: 'PLAYLIST', data: result.playlist, isAtmos: result.isAtmos };
             }
             throw new Error('Could not determine media type from input');
         }

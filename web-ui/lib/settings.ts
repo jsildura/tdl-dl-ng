@@ -11,6 +11,7 @@ export interface TidalSettings {
     lyrics_file: boolean;
     video_download: boolean;
     download_delay: boolean;
+    download_dolby_atmos: boolean;
     format_album: string;
     format_playlist: string;
     format_mix: string;
@@ -18,6 +19,8 @@ export interface TidalSettings {
     format_video: string;
     metadata_cover_dimension: string;
     metadata_cover_embed: boolean;
+    metadata_genre_lookup: boolean;
+    metadata_artist_separator: '; ' | ', ' | ' / ' | ' & ';
     multi_thread_download: boolean;
 }
 
@@ -29,6 +32,7 @@ export const DEFAULT_SETTINGS: TidalSettings = {
     lyrics_file: false,
     video_download: true,
     download_delay: false,
+    download_dolby_atmos: false,
     format_album: 'Albums/{album_artist} - {album_title}/{track_volume_num_optional}{album_track_num}. {artist_name} - {track_title}',
     format_playlist: 'Playlists/{playlist_name}/{list_pos}. {artist_name} - {track_title}',
     format_mix: 'Mix/{mix_name}/{artist_name} - {track_title}',
@@ -36,6 +40,8 @@ export const DEFAULT_SETTINGS: TidalSettings = {
     format_video: 'Videos/{artist_name} - {track_title}',
     metadata_cover_dimension: '1280',
     metadata_cover_embed: true,
+    metadata_genre_lookup: true,
+    metadata_artist_separator: '; ',
     multi_thread_download: false,
 };
 

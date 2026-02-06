@@ -11,6 +11,8 @@ export interface Env {
     ALLOWED_ORIGINS: string;
     TIDAL_CLIENT_ID: string;
     TIDAL_CLIENT_SECRET: string;
+    TIDAL_ATMOS_CLIENT_ID?: string;
+    TIDAL_ATMOS_CLIENT_SECRET?: string;
     // SESSIONS: KVNamespace; // Optional: for server-side session storage
 }
 
@@ -75,8 +77,8 @@ async function handleTokenPoll(request: Request, env: Env, origin: string): Prom
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-            client_id: 'fX2JxdmntZWK0ixT',
-            client_secret: '1Nn9AfDAjxrgJFJbKNWLeAyKGVGGmINuXPPLHVXAvxAg=',
+            client_id: env.TIDAL_CLIENT_ID,
+            client_secret: env.TIDAL_CLIENT_SECRET,
             device_code: body.device_code,
             grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
             scope: 'r_usr w_usr',
@@ -192,6 +194,94 @@ async function handleStreamUrl(request: Request, env: Env, origin: string): Prom
     });
 }
 
+// Get Dolby Atmos stream URL for a track
+// This requires exchanging the user's refresh token for an Atmos-authorized access token
+async function handleStreamAtmos(request: Request, env: Env, origin: string): Promise<Response> {
+    const url = new URL(request.url);
+    const trackId = url.searchParams.get('trackId');
+    const refreshToken = url.searchParams.get('refreshToken');
+
+    if (!trackId || !refreshToken) {
+        return new Response(JSON.stringify({ error: 'Missing trackId or refreshToken' }), {
+            status: 400,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    // Check if Atmos credentials are available
+    if (!env.TIDAL_ATMOS_CLIENT_ID || !env.TIDAL_ATMOS_CLIENT_SECRET) {
+        return new Response(JSON.stringify({ error: 'Atmos credentials not configured' }), {
+            status: 501,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    try {
+        // Step 1: Exchange refresh token for Atmos-authorized access token
+        const tokenResponse = await fetch(`${TIDAL_AUTH_URL}/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: env.TIDAL_ATMOS_CLIENT_ID,
+                client_secret: env.TIDAL_ATMOS_CLIENT_SECRET,
+                refresh_token: refreshToken,
+                grant_type: 'refresh_token',
+            }),
+        });
+
+        if (!tokenResponse.ok) {
+            const tokenError = await tokenResponse.json();
+            return new Response(JSON.stringify({ error: 'Failed to get Atmos token', details: tokenError }), {
+                status: tokenResponse.status,
+                headers: {
+                    ...corsHeaders(origin, env),
+                    'Content-Type': 'application/json',
+                },
+            });
+        }
+
+        const tokenData = await tokenResponse.json() as { access_token: string };
+        const atmosToken = tokenData.access_token;
+
+        // Step 2: Use Atmos token to get playback info with DOLBY_ATMOS mode
+        // Note: Atmos is only available at HIGH quality (320kbps)
+        const playbackUrl = `${TIDAL_API_URL}/tracks/${trackId}/playbackinfopostpaywall?audioquality=HIGH&playbackmode=STREAM&assetpresentation=FULL`;
+
+        const response = await fetch(playbackUrl, {
+            headers: {
+                'Authorization': `Bearer ${atmosToken}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        const data = await response.json();
+
+        return new Response(JSON.stringify(data), {
+            status: response.status,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    } catch (error) {
+        return new Response(JSON.stringify({ error: 'Atmos stream request failed', message: String(error) }), {
+            status: 500,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+}
+
 // Main request handler
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
@@ -252,6 +342,11 @@ export default {
             // Stream URL endpoint
             if (pathname === '/stream') {
                 return handleStreamUrl(request, env, origin);
+            }
+
+            // Dolby Atmos stream URL endpoint
+            if (pathname === '/stream-atmos') {
+                return handleStreamAtmos(request, env, origin);
             }
 
             // Cover art proxy endpoint

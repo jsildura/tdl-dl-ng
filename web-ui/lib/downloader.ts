@@ -5,8 +5,9 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import JSZip from 'jszip';
-import { getStreamInfo, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
+import { getStreamInfo, getStreamInfoAtmos, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
 import { getSettings } from './settings';
+import { getGenresByISRC } from './musicbrainz';
 
 
 
@@ -21,6 +22,22 @@ export interface DownloadProgress {
     currentTrack?: number;
     totalTracks?: number;
     trackName?: string;
+    isAtmos?: boolean;
+}
+
+export interface TrackDownloadResult {
+    track: TidalTrack;
+    isAtmos: boolean;
+}
+
+export interface AlbumDownloadResult {
+    album: TidalAlbum;
+    isAtmos: boolean;
+}
+
+export interface PlaylistDownloadResult {
+    playlist: TidalPlaylist;
+    isAtmos: boolean;
 }
 
 export type ProgressCallback = (progress: DownloadProgress) => void;
@@ -140,8 +157,6 @@ async function downloadSegments(
                         progress: overallProgress,
                         message: `Downloading segments... ${completedSegments}/${totalSegments}`
                     });
-
-                    console.log(`Segment ${segmentIndex + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
                 });
 
                 batchPromises.push(downloadPromise);
@@ -155,8 +170,6 @@ async function downloadSegments(
         for (const chunk of downloadedChunks) {
             if (chunk) totalLength += chunk.length;
         }
-
-        console.log(`All segments downloaded (multi-thread). Total size: ${totalLength} bytes`);
 
         const combined = new Uint8Array(totalLength);
         let offset = 0;
@@ -195,11 +208,7 @@ async function downloadSegments(
             const chunk = new Uint8Array(buffer);
             downloadedChunks.push(chunk);
             totalLength += chunk.length;
-
-            console.log(`Segment ${i + 1}/${totalSegments} downloaded: ${chunk.length} bytes`);
         }
-
-        console.log(`All segments downloaded. Total size: ${totalLength} bytes`);
 
         // Combine all chunks
         const combined = new Uint8Array(totalLength);
@@ -239,6 +248,7 @@ async function embedMetadata(
     album: TidalAlbum | null,
     coverData: Uint8Array | null,
     lyrics: string | null,
+    genres: string[],
     inputFormat: string,
     outputFormat: string, // 'flac' or 'm4a'
     onProgress?: ProgressCallback
@@ -250,8 +260,6 @@ async function embedMetadata(
     const inputFile = `input.${inputFormat}`;
     const outputFile = `output.${outputFormat}`;
 
-    console.log(`FFmpeg processing: ${inputFile} -> ${outputFile}`);
-
     // Write input file
     await ffmpegInstance.writeFile(inputFile, audioData);
 
@@ -262,11 +270,22 @@ async function embedMetadata(
     if (track.title) {
         metadataArgs.push('-metadata', `title=${track.title}`);
     }
-    if (track.artist?.name) {
+
+    // Artist metadata - prefer artists array for multiple artists
+    if (track.artists && track.artists.length > 0) {
+        const artistNames = track.artists.map(a => a.name).join(settings.metadata_artist_separator);
+        metadataArgs.push('-metadata', `artist=${artistNames}`);
+    } else if (track.artist?.name) {
         metadataArgs.push('-metadata', `artist=${track.artist.name}`);
     }
+
     if (track.album?.title) {
         metadataArgs.push('-metadata', `album=${track.album.title}`);
+    }
+
+    // Genre metadata from MusicBrainz
+    if (genres && genres.length > 0) {
+        metadataArgs.push('-metadata', `genre=${genres.join('; ')}`);
     }
 
     // Track number with total (format: trackNumber/totalTracks for M4A compatibility)
@@ -381,15 +400,13 @@ async function embedMetadata(
 
     ffmpegArgs.push(outputFile);
 
-    console.log('FFmpeg command args:', ffmpegArgs.join(' '));
-
     // Execute FFmpeg
     await ffmpegInstance.exec(ffmpegArgs);
 
     onProgress?.({ stage: 'processing', progress: 90, message: 'Finalizing...' });
 
     // Read output file
-    const data = await ffmpegInstance.readFile(outputFile);
+    const data = await ffmpegInstance.readFile(outputFile) as Uint8Array;
 
     // Cleanup
     await ffmpegInstance.deleteFile(inputFile);
@@ -409,7 +426,7 @@ async function embedMetadata(
 export async function downloadTrack(
     trackId: string | number,
     onProgress?: ProgressCallback
-): Promise<TidalTrack> {
+): Promise<TrackDownloadResult> {
     try {
         const settings = getSettings();
 
@@ -433,8 +450,24 @@ export async function downloadTrack(
 
         onProgress?.({ stage: 'fetching', progress: 10, message: 'Getting stream URL...', trackName });
 
-        // Get stream URL
-        const streamInfo = await getStreamInfo(trackId);
+        // Check if we should try Atmos
+        const shouldTryAtmos = settings.download_dolby_atmos &&
+            track.audioModes?.includes('DOLBY_ATMOS');
+
+        let streamInfo;
+        let isAtmosStream = false;
+
+        if (shouldTryAtmos) {
+            try {
+                streamInfo = await getStreamInfoAtmos(trackId);
+                isAtmosStream = true;
+            } catch (e) {
+                console.warn('Failed to get Atmos stream, falling back to normal stream:', e);
+                streamInfo = await getStreamInfo(trackId);
+            }
+        } else {
+            streamInfo = await getStreamInfo(trackId);
+        }
 
         if (!streamInfo.streamUrl && (!streamInfo.streamUrls || streamInfo.streamUrls.length === 0)) {
             throw new Error('Could not get stream URL');
@@ -461,25 +494,17 @@ export async function downloadTrack(
             lyrics = await getLyrics(trackId);
         }
 
-        onProgress?.({ stage: 'fetching', progress: 20, message: 'Downloading audio...', trackName });
+        onProgress?.({ stage: 'fetching', progress: 20, message: 'Downloading audio...', trackName, isAtmos: isAtmosStream });
 
         // Download audio file
         let audioBuffer: ArrayBufferLike;
 
-        console.log('Stream info in downloadTrack:', {
-            hasStreamUrl: !!streamInfo.streamUrl,
-            streamUrlSample: streamInfo.streamUrl?.substring(0, 50),
-            hasStreamUrls: !!streamInfo.streamUrls,
-            streamUrlsLength: streamInfo.streamUrls?.length || 0
-        });
-
         if (streamInfo.streamUrls && streamInfo.streamUrls.length > 0) {
-            console.log(`Downloading ${streamInfo.streamUrls.length} segments...`);
             const segmentData = await downloadSegments(streamInfo.streamUrls, (p) => {
                 if (p.stage === 'fetching') {
                     // Scale to 20-80%
                     const scaled = 20 + (p.progress * 0.6);
-                    onProgress?.({ ...p, progress: scaled, trackName });
+                    onProgress?.({ ...p, progress: scaled, trackName, isAtmos: isAtmosStream });
                 }
             });
             audioBuffer = segmentData.buffer;
@@ -488,7 +513,7 @@ export async function downloadTrack(
                 if (p.stage === 'fetching') {
                     // Scale to 20-80%
                     const scaled = 20 + (p.progress * 0.6);
-                    onProgress?.({ ...p, progress: scaled, trackName });
+                    onProgress?.({ ...p, progress: scaled, trackName, isAtmos: isAtmosStream });
                 }
             });
         } else {
@@ -497,8 +522,6 @@ export async function downloadTrack(
 
         const audioData = new Uint8Array(audioBuffer);
 
-        console.log('Audio data size before processing:', audioData.length, 'bytes');
-        console.log('Audio quality:', streamInfo.audioQuality);
 
         // Determine file format from quality
         // HI_RES_LOSSLESS is FLAC wrapped in fMP4 container (from DASH segments)
@@ -512,34 +535,58 @@ export async function downloadTrack(
         const isSegmented = streamInfo.streamUrls && streamInfo.streamUrls.length > 0;
         const inputFormat = isSegmented ? 'mp4' : (isHiRes ? 'flac' : 'm4a');
 
-        console.log('Format detection:', { isHiRes, isSegmented, inputFormat });
+        let finalData: Uint8Array;
+        let outputExtension: string;
 
-        // Load FFmpeg and process
-        const ffmpegInstance = await loadFFmpeg((p) => onProgress?.({ ...p, trackName }));
+        // Atmos streams use E-AC-3 JOC codec which FFmpeg.wasm cannot process
+        // Save the raw audio file directly (no metadata embedding possible)
+        if (isAtmosStream) {
+            // Atmos streams use E-AC-3 JOC codec which FFmpeg.wasm cannot process
+            finalData = audioData;
+            outputExtension = 'm4a';
+            onProgress?.({ stage: 'processing', progress: 90, message: 'Preparing Atmos file...', trackName, isAtmos: isAtmosStream });
+        } else {
+            // Fetch genres from MusicBrainz if enabled
+            let genres: string[] = [];
+            if (settings.metadata_genre_lookup && track.isrc) {
+                try {
+                    onProgress?.({ stage: 'processing', progress: 45, message: 'Looking up genres...', trackName, isAtmos: isAtmosStream });
+                    genres = await getGenresByISRC(track.isrc);
+                } catch (e) {
+                    console.warn('Failed to fetch genres:', e);
+                }
+            }
 
-        const processedData = await embedMetadata(
-            ffmpegInstance,
-            audioData,
-            track,
-            album,
-            coverData,
-            lyrics,
-            inputFormat,
-            isHiRes ? 'flac' : 'm4a', // outputFormat
-            (p) => onProgress?.({ ...p, trackName })
-        );
+            // Load FFmpeg and process
+            const ffmpegInstance = await loadFFmpeg((p: DownloadProgress) => onProgress?.({ ...p, trackName, isAtmos: isAtmosStream }));
 
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Triggering save dialog...', trackName });
+            const processedData = await embedMetadata(
+                ffmpegInstance,
+                audioData,
+                track,
+                album,
+                coverData,
+                lyrics,
+                genres,
+                inputFormat,
+                isHiRes ? 'flac' : 'm4a',
+                (p: DownloadProgress) => onProgress?.({ ...p, trackName, isAtmos: isAtmosStream })
+            );
+
+            finalData = new Uint8Array(processedData);
+            outputExtension = isHiRes ? 'flac' : 'm4a';
+        }
+
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Triggering save dialog...', trackName, isAtmos: isAtmosStream });
 
         // Create blob and trigger download
-        // Create a new Uint8Array to ensure standard ArrayBuffer (not SharedArrayBuffer) for Blob compatibility
-        const standardData = new Uint8Array(processedData);
-
-        const blob = new Blob([standardData], {
-            type: isHiRes ? 'audio/flac' : 'audio/mp4'
+        // Use ArrayBuffer.slice() to ensure we have a standard ArrayBuffer (not SharedArrayBuffer)
+        const standardBuffer = finalData.buffer.slice(finalData.byteOffset, finalData.byteOffset + finalData.byteLength) as ArrayBuffer;
+        const blob = new Blob([new Uint8Array(standardBuffer)], {
+            type: outputExtension === 'flac' ? 'audio/flac' : 'audio/mp4'
         });
 
-        const filename = `${formatFilename(track)}.${isHiRes ? 'flac' : 'm4a'}`;
+        const filename = `${formatFilename(track)}.${outputExtension}`;
 
         // Trigger browser save dialog
         const url = URL.createObjectURL(blob);
@@ -554,9 +601,9 @@ export async function downloadTrack(
         // Cleanup URL after a delay
         setTimeout(() => URL.revokeObjectURL(url), 10000);
 
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName, isAtmos: isAtmosStream });
 
-        return track;
+        return { track, isAtmos: isAtmosStream };
 
     } catch (error) {
         console.error('Download error:', error);
@@ -587,7 +634,7 @@ async function processTrackData(
     trackId: string | number,
     prefetchedTrack?: TidalTrack,
     prefetchedAlbum?: TidalAlbum | null
-): Promise<{ data: Uint8Array; filename: string; track: TidalTrack }> {
+): Promise<{ data: Uint8Array; filename: string; track: TidalTrack; isAtmos: boolean }> {
     const settings = getSettings();
 
     // Use pre-fetched track metadata if available, otherwise fetch it
@@ -603,10 +650,26 @@ async function processTrackData(
         }
     }
 
-    // Get stream URL
-    const streamInfo = await getStreamInfo(trackId);
+    // Check if we should try Atmos
+    const shouldTryAtmos = settings.download_dolby_atmos &&
+        track.audioModes?.includes('DOLBY_ATMOS');
 
-    if (!streamInfo.streamUrl) {
+    let streamInfo;
+    let isAtmosStream = false;
+
+    if (shouldTryAtmos) {
+        try {
+            streamInfo = await getStreamInfoAtmos(trackId);
+            isAtmosStream = true;
+        } catch (e) {
+            console.warn('Failed to get Atmos stream, falling back to normal stream:', e);
+            streamInfo = await getStreamInfo(trackId);
+        }
+    } else {
+        streamInfo = await getStreamInfo(trackId);
+    }
+
+    if (!streamInfo.streamUrl && (!streamInfo.streamUrls || streamInfo.streamUrls.length === 0)) {
         throw new Error('Could not get stream URL');
     }
 
@@ -657,7 +720,17 @@ async function processTrackData(
         streamInfo.audioQuality === 'LOSSLESS';
     const isSegmented = streamInfo.streamUrls && streamInfo.streamUrls.length > 0;
     const inputFormat = isSegmented ? 'mp4' : (isHiRes ? 'flac' : 'm4a');
-    const outputFormat = isHiRes ? 'flac' : 'm4a';
+    const outputFormat = isAtmosStream ? 'm4a' : (isHiRes ? 'flac' : 'm4a'); // Atmos must be m4a
+
+    // Fetch genres from MusicBrainz if enabled
+    let genres: string[] = [];
+    if (settings.metadata_genre_lookup && track.isrc) {
+        try {
+            genres = await getGenresByISRC(track.isrc);
+        } catch (e) {
+            console.warn('Failed to fetch genres:', e);
+        }
+    }
 
     // Load FFmpeg and process
     const ffmpegInstance = await loadFFmpeg();
@@ -669,13 +742,14 @@ async function processTrackData(
         album,
         coverData,
         lyrics,
+        genres,
         inputFormat,
         outputFormat
     );
 
     const filename = `${formatFilename(track)}.${outputFormat}`;
 
-    return { data: new Uint8Array(processedData), filename, track };
+    return { data: new Uint8Array(processedData), filename, track, isAtmos: isAtmosStream };
 }
 
 /**
@@ -684,7 +758,7 @@ async function processTrackData(
 export async function downloadAlbum(
     albumId: string | number,
     onProgress?: ProgressCallback
-): Promise<TidalAlbum> {
+): Promise<AlbumDownloadResult> {
     try {
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching album info...' });
 
@@ -713,6 +787,8 @@ export async function downloadAlbum(
             currentTrack: 0
         });
 
+        let hasAtmosTrack = false;
+
         // Download each track
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
@@ -729,7 +805,8 @@ export async function downloadAlbum(
             });
 
             try {
-                const { data, filename } = await processTrackData(track.id, track, album);
+                const { data, filename, isAtmos } = await processTrackData(track.id, track, album);
+                if (isAtmos) hasAtmosTrack = true;
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(track.trackNumber || currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
@@ -772,7 +849,7 @@ export async function downloadAlbum(
 
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
 
-        return album;
+        return { album, isAtmos: hasAtmosTrack };
 
     } catch (error) {
         console.error('Album download error:', error);
@@ -791,7 +868,7 @@ export async function downloadAlbum(
 export async function downloadPlaylist(
     playlistId: string,
     onProgress?: ProgressCallback
-): Promise<TidalPlaylist> {
+): Promise<PlaylistDownloadResult> {
     try {
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching playlist info...' });
 
@@ -816,6 +893,8 @@ export async function downloadPlaylist(
             currentTrack: 0
         });
 
+        let hasAtmosTrack = false;
+
         // Download each track
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
@@ -839,7 +918,8 @@ export async function downloadPlaylist(
             });
 
             try {
-                const { data, filename } = await processTrackData(track.id, track, null);
+                const { data, filename, isAtmos } = await processTrackData(track.id, track, null);
+                if (isAtmos) hasAtmosTrack = true;
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(currentTrack).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
@@ -889,7 +969,7 @@ export async function downloadPlaylist(
 
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
 
-        return playlist;
+        return { playlist, isAtmos: hasAtmosTrack };
 
     } catch (error) {
         console.error('Playlist download error:', error);

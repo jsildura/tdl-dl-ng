@@ -19,6 +19,7 @@ export interface TidalTrack {
     volumeNumber: number;
     explicit: boolean;
     audioQuality: string;
+    audioModes?: string[]; // e.g. ['STEREO', 'DOLBY_ATMOS']
     isrc?: string;
     copyright?: string;
     artist: {
@@ -197,7 +198,6 @@ export async function getPlaylistTracks(playlistId: string): Promise<TidalTrack[
     }
 
     const data = await response.json();
-    console.log('Playlist API response:', JSON.stringify(data, null, 2));
 
     // Handle different response structures
     let items = data.items;
@@ -224,7 +224,6 @@ export async function getPlaylistTracks(playlistId: string): Promise<TidalTrack[
         })
         .filter((track: TidalTrack | undefined): track is TidalTrack => track !== undefined && track !== null);
 
-    console.log('Parsed tracks:', tracks.length);
     return tracks;
 }
 
@@ -253,13 +252,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
     const data = await response.json();
 
-    console.log('Stream info response:', {
-        trackId: data.trackId,
-        audioQuality: data.audioQuality,
-        manifestMimeType: data.manifestMimeType,
-        manifestLength: data.manifest?.length
-    });
-
     // Decode manifest to get actual stream URL
     let streamUrl = '';
     let streamUrls: string[] = [];
@@ -268,7 +260,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         try {
             const manifestJson = JSON.parse(atob(data.manifest));
             streamUrl = manifestJson.urls?.[0] || '';
-            console.log('BTS manifest decoded, URL found:', !!streamUrl);
         } catch (e) {
             console.error('Failed to decode BTS manifest:', e);
         }
@@ -276,7 +267,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         // DASH manifest - base64 encoded MPD XML (used for Hi-Res)
         try {
             const mpdXml = atob(data.manifest);
-            console.log('DASH manifest decoded, length:', mpdXml.length);
 
             // Parse the MPD XML to extract the media URL
             // The URL is typically in a <BaseURL> element or as a template
@@ -287,7 +277,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
             const baseUrlElement = doc.querySelector('BaseURL');
             if (baseUrlElement?.textContent) {
                 streamUrl = baseUrlElement.textContent;
-                console.log('Found BaseURL in DASH manifest');
             } else {
                 // Fallback: Try to find SegmentTemplate with media attribute
                 const segmentTemplate = doc.querySelector('SegmentTemplate');
@@ -296,8 +285,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
                 // Check if media URL has $Number$ placeholder - this means it's a segmented stream
                 if (media && media.includes('$Number$') && segmentTemplate) {
-                    console.log('Found segmented DASH stream with $Number$ template');
-
                     // Calculate number of segments from SegmentTimeline
                     const S_elements = segmentTemplate.querySelectorAll('SegmentTimeline S');
 
@@ -308,8 +295,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
                         if (r > 0) totalCount += r;
                     });
 
-                    console.log('Calculated segment count:', totalCount);
-
                     // Generate URLs by replacing $Number$ with actual segment numbers
                     const urls: string[] = [];
                     for (let i = 0; i < totalCount; i++) {
@@ -319,16 +304,13 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
                     if (urls.length > 0) {
                         streamUrls = urls;
                         streamUrl = urls[0]; // Set first as primary for back-compat
-                        console.log(`Generated ${urls.length} DASH segment URLs`);
                     }
                 } else if (media) {
                     // Non-segmented media URL (no $Number$ placeholder)
                     streamUrl = media;
-                    console.log('Using SegmentTemplate media URL for Hi-Res stream');
                 } else if (initialization) {
                     // Some streams might only have initialization URL
                     streamUrl = initialization;
-                    console.log('Using SegmentTemplate initialization URL');
                 }
 
                 // Also check Representation with BaseURL as final fallback
@@ -336,7 +318,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
                     const representation = doc.querySelector('Representation BaseURL');
                     if (representation?.textContent) {
                         streamUrl = representation.textContent;
-                        console.log('Found Representation BaseURL in DASH manifest');
                     }
                 }
             }
@@ -349,6 +330,56 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         }
     } else {
         console.warn('Unknown manifest type:', data.manifestMimeType);
+    }
+
+    return {
+        trackId: data.trackId,
+        audioQuality: data.audioQuality,
+        manifest: data.manifest,
+        manifestMimeType: data.manifestMimeType,
+        streamUrl,
+        streamUrls
+    };
+}
+
+/**
+ * Get Dolby Atmos stream info for a track
+ * This uses a dedicated endpoint for Atmos streaming
+ * The worker exchanges the refresh token for an Atmos-authorized access token
+ */
+export async function getStreamInfoAtmos(trackId: string | number): Promise<StreamInfo> {
+    // Import getRefreshToken dynamically to avoid circular dependency
+    const { getRefreshToken } = await import('./auth');
+
+    const workerUrl = getWorkerUrl();
+    const refreshToken = getRefreshToken();
+
+    if (!refreshToken) {
+        throw new Error('Not authenticated - no refresh token');
+    }
+
+    const response = await fetch(`${workerUrl}/stream-atmos?trackId=${trackId}&refreshToken=${encodeURIComponent(refreshToken)}`);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to get Atmos stream URL');
+    }
+
+    const data = await response.json();
+
+    // Decode manifest to get actual stream URL
+    // Atmos streams use BTS manifest format
+    let streamUrl = '';
+    let streamUrls: string[] = [];
+    if (data.manifestMimeType === 'application/vnd.tidal.bts') {
+        try {
+            const manifestJson = JSON.parse(atob(data.manifest));
+            streamUrl = manifestJson.urls?.[0] || '';
+        } catch (e) {
+            console.error('Failed to decode Atmos BTS manifest:', e);
+        }
+    } else {
+        console.warn('Unexpected Atmos manifest type:', data.manifestMimeType);
     }
 
     return {
@@ -391,17 +422,16 @@ export async function getLyrics(trackId: string | number): Promise<string | null
         const response = await fetchWithAuth(`/api/tracks/${trackId}/lyrics?countryCode=US`);
 
         if (!response.ok) {
-            console.log(`Lyrics not available for track ${trackId}: ${response.status}`);
+
             return null;
         }
 
         const data = await response.json();
-        console.log('Lyrics API response for track', trackId, ':', data);
 
         // Tidal returns lyrics in 'subtitles' for synced lyrics (LRC format) or 'lyrics' for plain text
         const lyrics = data.subtitles || data.lyrics || null;
         if (lyrics) {
-            console.log('Found lyrics, length:', lyrics.length);
+
         }
         return lyrics;
     } catch (e) {

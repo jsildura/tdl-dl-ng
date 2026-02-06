@@ -32,6 +32,7 @@ export interface DownloadHistoryItem {
     type: 'Track' | 'Album' | 'Playlist';
     date: string;
     timestamp?: Timestamp;
+    isAtmos?: boolean;
 }
 
 /**

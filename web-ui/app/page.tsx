@@ -67,7 +67,7 @@ export default function Home() {
         (progress) => {
           setDownloadProgress(progress);
         }
-      ) as { status: string; type?: string; data?: TidalTrack | TidalAlbum | TidalPlaylist };
+      ) as { status: string; type?: string; data?: TidalTrack | TidalAlbum | TidalPlaylist; isAtmos?: boolean };
 
       // Add to history if successful
       if (result.status === 'completed' && result.data) {
@@ -83,7 +83,8 @@ export default function Home() {
             title: track.title,
             artist: track.artist?.name || 'Unknown',
             type: 'Track',
-            date: dateStr
+            date: dateStr,
+            isAtmos: result.isAtmos
           };
         } else if (result.type === 'ALBUM') {
           const album = result.data as TidalAlbum;
@@ -92,7 +93,8 @@ export default function Home() {
             title: album.title,
             artist: album.artist?.name || 'Unknown',
             type: 'Album',
-            date: dateStr
+            date: dateStr,
+            isAtmos: result.isAtmos
           };
         } else if (result.type === 'PLAYLIST') {
           const playlist = result.data as TidalPlaylist;
@@ -101,17 +103,18 @@ export default function Home() {
             title: playlist.title,
             artist: 'Tidal Playlist',
             type: 'Playlist',
-            date: dateStr
+            date: dateStr,
+            isAtmos: result.isAtmos
           };
         }
 
         if (historyItem) {
-          await addToHistory(historyItem);
-          await incrementDownloadCount();
+          // Fire-and-forget: don't await these to prevent blocking UI reset
+          addToHistory(historyItem).catch(err => console.warn('History save failed:', err));
+          incrementDownloadCount().catch(err => console.warn('Stats update failed:', err));
         }
       }
 
-      console.log("Download completed for URL", url);
     } catch (err) {
       console.error("Download failed", err);
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -287,6 +290,17 @@ export default function Home() {
                               }`}>
                               {item.type}
                             </span>
+                            {item.isAtmos && (
+                              <svg
+                                className="h-3 w-auto fill-current text-primary"
+                                viewBox="0 0 269.23 189.28"
+                                aria-label="Dolby Atmos"
+                              >
+                                <title>Dolby Atmos</title>
+                                <path d="M269.23,0V189.28h-27.92c-52.14,0-94.64-42.5-94.64-94.64S189.17,0,241.31,0h27.92Z" />
+                                <path d="M27.92,0c52.14,0,94.64,42.5,94.64,94.64s-42.5,94.64-94.64,94.64H0V0H27.92Z" />
+                              </svg>
+                            )}
                             <span className="text-[10px] text-outline">
                               {item.date}
                             </span>

@@ -247,6 +247,15 @@ export async function getValidToken(): Promise<string | null> {
 }
 
 /**
+ * Get the refresh token for Atmos authentication
+ * This is needed because Atmos requires re-authenticating with different credentials
+ */
+export function getRefreshToken(): string | null {
+    const token = getStoredToken();
+    return token?.refresh_token || null;
+}
+
+/**
  * Check if user is currently authenticated
  */
 export function isAuthenticated(): boolean {
@@ -264,30 +273,64 @@ export async function fetchUserInfo(): Promise<UserInfo | null> {
     const workerUrl = getWorkerUrl();
 
     try {
-        const response = await fetch(`${workerUrl}/api/users/me`, {
+        // Use /sessions endpoint which returns current user session info
+        const response = await fetch(`${workerUrl}/api/sessions`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
             },
         });
 
         if (!response.ok) {
+            // Fallback: check if we have stored user info already
+            const stored = getStoredUser();
+            if (stored) return stored;
+
+            // Return minimal info if we have a token
+            const storedToken = getStoredToken();
+            if (storedToken?.user_id) {
+                return {
+                    userId: storedToken.user_id,
+                    email: '',
+                    firstName: '',
+                    lastName: '',
+                    username: 'Tidal User',
+                };
+            }
             return null;
         }
 
         const data = await response.json();
 
+        // Sessions endpoint can return user info in different structures
+        // Try multiple possible locations
         const user: UserInfo = {
-            userId: data.id,
-            email: data.email,
-            firstName: data.firstName || '',
-            lastName: data.lastName || '',
-            username: data.username,
+            userId: data.userId || data.id || data.user?.userId || data.user?.id || 0,
+            email: data.email || data.user?.email || '',
+            firstName: data.firstName || data.user?.firstName || '',
+            lastName: data.lastName || data.user?.lastName || '',
+            username: data.username || data.user?.username || data.user?.nickname || 'Tidal User',
         };
 
         storeUser(user);
         return user;
     } catch (error) {
         console.error('Failed to fetch user info:', error);
+
+        // Fallback to stored user or minimal info
+        const stored = getStoredUser();
+        if (stored) return stored;
+
+        const storedToken = getStoredToken();
+        if (storedToken?.user_id) {
+            return {
+                userId: storedToken.user_id,
+                email: '',
+                firstName: '',
+                lastName: '',
+                username: 'Tidal User',
+            };
+        }
         return null;
     }
 }
+
