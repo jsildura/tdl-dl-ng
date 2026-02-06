@@ -11,7 +11,7 @@ export default function AdScript() {
             />
             <Script
                 src="/assets/js/ui-vendor.js"
-                strategy="afterInteractive"
+                strategy="lazyOnload"
             />
         </>
     );
