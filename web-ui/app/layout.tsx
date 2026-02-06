@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import AdScript from "./AdScript";
 
@@ -41,7 +42,7 @@ export default function RootLayout({
              `
           }}
         />
-        <script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" />
+        <Script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" strategy="beforeInteractive" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
