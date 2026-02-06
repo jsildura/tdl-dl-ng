@@ -3,6 +3,7 @@ import { Roboto } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import AdScript from "./AdScript";
+import DisableDevtool from "./DisableDevtool";
 
 const roboto = Roboto({
   weight: ['300', '400', '500', '700'],
@@ -43,30 +44,7 @@ export default function RootLayout({
              `
           }}
         />
-        <Script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" strategy="beforeInteractive" />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if (typeof DisableDevtool !== 'undefined') {
-                // Skip disable-devtool on localhost for development
-                var isLocalhost = window.location.hostname === 'localhost' || 
-                                  window.location.hostname === '127.0.0.1' ||
-                                  window.location.hostname === '0.0.0.0';
-                if (!isLocalhost) {
-                  DisableDevtool({
-                    url: window.location.href,
-                    disableMenu: true,
-                    clearLog: true,
-                    disableSelect: false,
-                    disableCopy: false,
-                    disableCut: false,
-                    disablePaste: false
-                  });
-                }
-              }
-            `
-          }}
-        />
+        <DisableDevtool />
         {children}
       </body>
     </html>
