@@ -67,8 +67,6 @@ export default function RootLayout({
           }}
         />
         {children}
-        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
-        <script src="https://pl28652175.effectivegatecpm.com/07/67/34/076734aa0a569577712bd0a13b57f00e.js"></script>
       </body>
     </html>
   );
