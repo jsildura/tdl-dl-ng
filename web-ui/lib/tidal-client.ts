@@ -259,7 +259,7 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         // BTS manifest - base64 encoded JSON
         try {
             const manifestJson = JSON.parse(atob(data.manifest));
-            streamUrl = manifestJson.urls?.[0] || '';
+            streamUrl = (manifestJson.urls?.[0] || '').replace('http://', 'https://');
         } catch (e) {
             console.error('Failed to decode BTS manifest:', e);
         }
@@ -276,7 +276,7 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
             // Try to find BaseURL first (most common for Hi-Res FLAC)
             const baseUrlElement = doc.querySelector('BaseURL');
             if (baseUrlElement?.textContent) {
-                streamUrl = baseUrlElement.textContent;
+                streamUrl = baseUrlElement.textContent.replace('http://', 'https://');
             } else {
                 // Fallback: Try to find SegmentTemplate with media attribute
                 const segmentTemplate = doc.querySelector('SegmentTemplate');
@@ -298,7 +298,7 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
                     // Generate URLs by replacing $Number$ with actual segment numbers
                     const urls: string[] = [];
                     for (let i = 0; i < totalCount; i++) {
-                        urls.push(media.replace('$Number$', i.toString()));
+                        urls.push(media.replace('$Number$', i.toString()).replace('http://', 'https://'));
                     }
 
                     if (urls.length > 0) {
@@ -307,17 +307,17 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
                     }
                 } else if (media) {
                     // Non-segmented media URL (no $Number$ placeholder)
-                    streamUrl = media;
+                    streamUrl = media.replace('http://', 'https://');
                 } else if (initialization) {
                     // Some streams might only have initialization URL
-                    streamUrl = initialization;
+                    streamUrl = initialization.replace('http://', 'https://');
                 }
 
                 // Also check Representation with BaseURL as final fallback
                 if (!streamUrl && !streamUrls?.length) {
                     const representation = doc.querySelector('Representation BaseURL');
                     if (representation?.textContent) {
-                        streamUrl = representation.textContent;
+                        streamUrl = representation.textContent.replace('http://', 'https://');
                     }
                 }
             }
@@ -374,7 +374,7 @@ export async function getStreamInfoAtmos(trackId: string | number): Promise<Stre
     if (data.manifestMimeType === 'application/vnd.tidal.bts') {
         try {
             const manifestJson = JSON.parse(atob(data.manifest));
-            streamUrl = manifestJson.urls?.[0] || '';
+            streamUrl = (manifestJson.urls?.[0] || '').replace('http://', 'https://');
         } catch (e) {
             console.error('Failed to decode Atmos BTS manifest:', e);
         }
