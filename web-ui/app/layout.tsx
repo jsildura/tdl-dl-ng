@@ -41,7 +41,7 @@ export default function RootLayout({
              `
           }}
         />
-        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        {/* Temporarily disabled disable-devtool
         <script src="https://cdn.jsdelivr.net/npm/disable-devtool@latest" />
         <script
           dangerouslySetInnerHTML={{
@@ -66,6 +66,7 @@ export default function RootLayout({
             `
           }}
         />
+        */}
         {children}
       </body>
     </html>
