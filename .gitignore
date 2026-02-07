@@ -170,3 +170,4 @@ cython_debug/
 # Custom
 
 download/
+tidal-dl-ng-cli/

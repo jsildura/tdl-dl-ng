@@ -20,8 +20,13 @@ export interface TidalTrack {
     explicit: boolean;
     audioQuality: string;
     audioModes?: string[]; // e.g. ['STEREO', 'DOLBY_ATMOS']
+    version?: string;
     isrc?: string;
     copyright?: string;
+    replayGain?: number;
+    peak?: number;
+    albumReplayGain?: number;
+    albumPeak?: number;
     artist: {
         id: number;
         name: string;
@@ -77,6 +82,11 @@ export interface StreamInfo {
     // Decoded manifest will contain actual URL
     streamUrl?: string;
     streamUrls?: string[];
+    // ReplayGain values from stream endpoint
+    albumReplayGain?: number;
+    albumPeakAmplitude?: number;
+    trackReplayGain?: number;
+    trackPeakAmplitude?: number;
 }
 
 /**
@@ -252,6 +262,20 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
     const data = await response.json();
 
+    // Debug: Log stream response to see ReplayGain fields
+    console.log('[DEBUG] Stream response:', {
+        trackId: data.trackId,
+        audioQuality: data.audioQuality,
+        manifestMimeType: data.manifestMimeType,
+        // ReplayGain fields (check if these exist)
+        albumReplayGain: data.albumReplayGain,
+        albumPeakAmplitude: data.albumPeakAmplitude,
+        trackReplayGain: data.trackReplayGain,
+        trackPeakAmplitude: data.trackPeakAmplitude,
+        // Show all keys to find correct field names
+        allKeys: Object.keys(data),
+    });
+
     // Decode manifest to get actual stream URL
     let streamUrl = '';
     let streamUrls: string[] = [];
@@ -338,7 +362,12 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
         manifest: data.manifest,
         manifestMimeType: data.manifestMimeType,
         streamUrl,
-        streamUrls
+        streamUrls,
+        // ReplayGain values from stream response
+        albumReplayGain: data.albumReplayGain,
+        albumPeakAmplitude: data.albumPeakAmplitude,
+        trackReplayGain: data.trackReplayGain,
+        trackPeakAmplitude: data.trackPeakAmplitude,
     };
 }
 
@@ -388,7 +417,12 @@ export async function getStreamInfoAtmos(trackId: string | number): Promise<Stre
         manifest: data.manifest,
         manifestMimeType: data.manifestMimeType,
         streamUrl,
-        streamUrls
+        streamUrls,
+        // ReplayGain values from stream response
+        albumReplayGain: data.albumReplayGain,
+        albumPeakAmplitude: data.albumPeakAmplitude,
+        trackReplayGain: data.trackReplayGain,
+        trackPeakAmplitude: data.trackPeakAmplitude,
     };
 }
 

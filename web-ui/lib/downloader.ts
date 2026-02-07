@@ -4,9 +4,11 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 import JSZip from 'jszip';
-import { getStreamInfo, getStreamInfoAtmos, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist } from './tidal-client';
+import { getStreamInfo, getStreamInfoAtmos, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist, StreamInfo } from './tidal-client';
 import { getSettings } from './settings';
+import { injectReplayGain } from './m4a-utils';
 import { getGenresByISRC } from './musicbrainz';
 
 
@@ -14,6 +16,63 @@ import { getGenresByISRC } from './musicbrainz';
 // FFmpeg instance (lazy loaded)
 let ffmpeg: FFmpeg | null = null;
 let ffmpegLoaded = false;
+
+/**
+ * Fetch cover art with fallback resolution.
+ * Tries 1280x1280, falls back to 640x640.
+ * @param coverId The cover ID (e.g., from album.cover or playlist.image)
+ * @returns Uint8Array of cover art data, or null if fetch fails.
+ */
+async function fetchCoverArtBlob(coverId: string): Promise<Uint8Array | null> {
+    if (!coverId) return null;
+    const workerUrl = getWorkerUrl();
+    const sizes = [1280, 640];
+
+    for (const size of sizes) {
+        try {
+            const coverProxyUrl = `${workerUrl}/cover?id=${coverId}&size=${size}`;
+            const response = await fetch(coverProxyUrl);
+            if (response.ok) {
+                return new Uint8Array(await response.arrayBuffer());
+            }
+        } catch (e) {
+            console.warn(`Failed to fetch cover art at size ${size}:`, e);
+        }
+    }
+    return null;
+}
+
+/**
+ * Request a screen wake lock to prevent the device from sleeping.
+ * @returns A WakeLockSentinel if successful, or null if the API is not supported or the request fails.
+ */
+async function requestWakeLock(): Promise<WakeLockSentinel | null> {
+    try {
+        if ('wakeLock' in navigator) {
+            const sentinel = await navigator.wakeLock.request('screen');
+            console.log('Screen Wake Lock acquired');
+            return sentinel;
+        }
+    } catch (err) {
+        console.warn('Screen Wake Lock request failed:', err);
+    }
+    return null;
+}
+
+/**
+ * Release a previously acquired screen wake lock.
+ * @param sentinel The WakeLockSentinel to release.
+ */
+async function releaseWakeLock(sentinel: WakeLockSentinel | null): Promise<void> {
+    if (sentinel) {
+        try {
+            await sentinel.release();
+            console.log('Screen Wake Lock released');
+        } catch (err) {
+            console.warn('Failed to release Screen Wake Lock:', err);
+        }
+    }
+}
 
 export interface DownloadProgress {
     stage: 'fetching' | 'processing' | 'complete' | 'error';
@@ -225,6 +284,9 @@ async function downloadSegments(
 /**
  * Format track metadata for filename
  */
+/**
+ * Format track metadata for filename
+ */
 function formatFilename(track: TidalTrack): string {
     const artist = track.artist?.name || 'Unknown Artist';
     const title = track.title || 'Unknown Track';
@@ -251,7 +313,8 @@ async function embedMetadata(
     genres: string[],
     inputFormat: string,
     outputFormat: string, // 'flac' or 'm4a'
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    streamInfo?: StreamInfo
 ): Promise<Uint8Array> {
     const settings = getSettings();
 
@@ -339,6 +402,21 @@ async function embedMetadata(
         metadataArgs.push('-metadata', `isrc=${track.isrc}`);
     }
 
+    // ReplayGain metadata (from stream response)
+    // Format: REPLAYGAIN_TRACK_GAIN=-X.XX dB, REPLAYGAIN_TRACK_PEAK=X.XXXXXX
+    if (streamInfo?.trackReplayGain !== undefined && streamInfo?.trackReplayGain !== null) {
+        metadataArgs.push('-metadata', `REPLAYGAIN_TRACK_GAIN=${streamInfo.trackReplayGain.toFixed(2)} dB`);
+    }
+    if (streamInfo?.trackPeakAmplitude !== undefined && streamInfo?.trackPeakAmplitude !== null) {
+        metadataArgs.push('-metadata', `REPLAYGAIN_TRACK_PEAK=${streamInfo.trackPeakAmplitude.toFixed(6)}`);
+    }
+    if (streamInfo?.albumReplayGain !== undefined && streamInfo?.albumReplayGain !== null) {
+        metadataArgs.push('-metadata', `REPLAYGAIN_ALBUM_GAIN=${streamInfo.albumReplayGain.toFixed(2)} dB`);
+    }
+    if (streamInfo?.albumPeakAmplitude !== undefined && streamInfo?.albumPeakAmplitude !== null) {
+        metadataArgs.push('-metadata', `REPLAYGAIN_ALBUM_PEAK=${streamInfo.albumPeakAmplitude.toFixed(6)}`);
+    }
+
     // Build FFmpeg command
     const ffmpegArgs = ['-i', inputFile];
 
@@ -353,7 +431,7 @@ async function embedMetadata(
         if (inputFormat === 'flac') {
             ffmpegArgs.push('-disposition:v', 'attached_pic');
         } else {
-            // Use copy codec for M4A/AAC to avoid mjpeg transcoding hangs in WASM
+            // Use copy codec for M4A cover art (works when not using use_metadata_tags)
             ffmpegArgs.push('-c:v', 'copy');
             ffmpegArgs.push('-disposition:v:0', 'attached_pic');
         }
@@ -383,7 +461,24 @@ async function embedMetadata(
         }
     }
 
-    // Add metadata
+    // Add ReplayGain metadata
+    // For M4A, we use a custom injector (m4a-utils) because FFmpeg's movflags break cover art.
+    // For FLAC, we use FFmpeg directly.
+    if (streamInfo && outputFormat !== 'm4a') {
+        if (streamInfo.trackReplayGain !== undefined && streamInfo.trackReplayGain !== null) {
+            metadataArgs.push('-metadata', `REPLAYGAIN_TRACK_GAIN=${streamInfo.trackReplayGain.toFixed(2)} dB`);
+        }
+        if (streamInfo.trackPeakAmplitude !== undefined && streamInfo.trackPeakAmplitude !== null) {
+            metadataArgs.push('-metadata', `REPLAYGAIN_TRACK_PEAK=${streamInfo.trackPeakAmplitude.toFixed(6)}`);
+        }
+        if (streamInfo.albumReplayGain !== undefined && streamInfo.albumReplayGain !== null) {
+            metadataArgs.push('-metadata', `REPLAYGAIN_ALBUM_GAIN=${streamInfo.albumReplayGain.toFixed(2)} dB`);
+        }
+        if (streamInfo.albumPeakAmplitude !== undefined && streamInfo.albumPeakAmplitude !== null) {
+            metadataArgs.push('-metadata', `REPLAYGAIN_ALBUM_PEAK=${streamInfo.albumPeakAmplitude.toFixed(6)}`);
+        }
+    }
+
     ffmpegArgs.push(...metadataArgs);
 
     // For fMP4 to FLAC conversion, we need to extract the FLAC audio from the MP4 container
@@ -406,7 +501,26 @@ async function embedMetadata(
     onProgress?.({ stage: 'processing', progress: 90, message: 'Finalizing...' });
 
     // Read output file
-    const data = await ffmpegInstance.readFile(outputFile) as Uint8Array;
+    let data = await ffmpegInstance.readFile(outputFile) as Uint8Array;
+
+    // Inject ReplayGain for M4A using custom utility
+    if (outputFormat === 'm4a' && streamInfo) {
+        onProgress?.({ stage: 'processing', progress: 95, message: 'Injecting ReplayGain...' });
+        const tags: Record<string, string> = {};
+        if (streamInfo.trackReplayGain) tags['REPLAYGAIN_TRACK_GAIN'] = `${streamInfo.trackReplayGain.toFixed(2)} dB`;
+        if (streamInfo.trackPeakAmplitude) tags['REPLAYGAIN_TRACK_PEAK'] = `${streamInfo.trackPeakAmplitude.toFixed(6)}`;
+        if (streamInfo.albumReplayGain) tags['REPLAYGAIN_ALBUM_GAIN'] = `${streamInfo.albumReplayGain.toFixed(2)} dB`;
+        if (streamInfo.albumPeakAmplitude) tags['REPLAYGAIN_ALBUM_PEAK'] = `${streamInfo.albumPeakAmplitude.toFixed(6)}`;
+
+        // Inject tags if we have any
+        if (Object.keys(tags).length > 0) {
+            try {
+                data = await injectReplayGain(data, tags);
+            } catch (e) {
+                console.warn('Failed to inject ReplayGain tags:', e);
+            }
+        }
+    }
 
     // Cleanup
     await ffmpegInstance.deleteFile(inputFile);
@@ -427,13 +541,21 @@ export async function downloadTrack(
     trackId: string | number,
     onProgress?: ProgressCallback
 ): Promise<TrackDownloadResult> {
+    let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
+        wakeLockSentinel = await requestWakeLock();
         const settings = getSettings();
 
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching track info...' });
 
         // Get track metadata
         const track = await getTrack(trackId);
+
+        // Append version to title if present (fixes UI and Filename)
+        if (track.version) {
+            track.title = `${track.title} (${track.version})`;
+        }
+
         const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
 
         onProgress?.({ stage: 'fetching', progress: 5, message: 'Fetching album info...', trackName });
@@ -570,7 +692,8 @@ export async function downloadTrack(
                 genres,
                 inputFormat,
                 isHiRes ? 'flac' : 'm4a',
-                (p: DownloadProgress) => onProgress?.({ ...p, trackName, isAtmos: isAtmosStream })
+                (p: DownloadProgress) => onProgress?.({ ...p, trackName, isAtmos: isAtmosStream }),
+                streamInfo
             );
 
             finalData = new Uint8Array(processedData);
@@ -613,6 +736,8 @@ export async function downloadTrack(
             message: error instanceof Error ? error.message : 'Download failed'
         });
         throw error;
+    } finally {
+        await releaseWakeLock(wakeLockSentinel);
     }
 }
 
@@ -744,7 +869,9 @@ async function processTrackData(
         lyrics,
         genres,
         inputFormat,
-        outputFormat
+        outputFormat,
+        undefined, // onProgress
+        streamInfo
     );
 
     const filename = `${formatFilename(track)}.${outputFormat}`;
@@ -759,7 +886,9 @@ export async function downloadAlbum(
     albumId: string | number,
     onProgress?: ProgressCallback
 ): Promise<AlbumDownloadResult> {
+    let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
+        wakeLockSentinel = await requestWakeLock();
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching album info...' });
 
         // Get album info and tracks
@@ -779,6 +908,13 @@ export async function downloadAlbum(
             .replace(/\s+/g, ' ')
             .trim();
 
+        // Fetch cover art (1280x1280, fallback to 640x640)
+        onProgress?.({ stage: 'fetching', progress: 2, message: 'Fetching cover art...' });
+        const coverArt = await fetchCoverArtBlob(album.cover);
+        if (coverArt) {
+            zip.file('cover.jpg', coverArt);
+        }
+
         onProgress?.({
             stage: 'fetching',
             progress: 5,
@@ -792,6 +928,12 @@ export async function downloadAlbum(
         // Download each track
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
+
+            // Append version to title if present (fixes UI and Filename)
+            if (track.version) {
+                track.title = `${track.title} (${track.version})`;
+            }
+
             const currentTrack = i + 1;
             const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
 
@@ -859,6 +1001,8 @@ export async function downloadAlbum(
             message: error instanceof Error ? error.message : 'Album download failed'
         });
         throw error;
+    } finally {
+        await releaseWakeLock(wakeLockSentinel);
     }
 }
 
@@ -869,7 +1013,9 @@ export async function downloadPlaylist(
     playlistId: string,
     onProgress?: ProgressCallback
 ): Promise<PlaylistDownloadResult> {
+    let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
+        wakeLockSentinel = await requestWakeLock();
         onProgress?.({ stage: 'fetching', progress: 0, message: 'Fetching playlist info...' });
 
         // Get playlist info
@@ -884,6 +1030,13 @@ export async function downloadPlaylist(
 
         const totalTracks = tracks.length;
         const zip = new JSZip();
+
+        // Fetch cover art (1280x1280, fallback to 640x640)
+        onProgress?.({ stage: 'fetching', progress: 2, message: 'Fetching cover art...' });
+        const coverArt = await fetchCoverArtBlob(playlist.image);
+        if (coverArt) {
+            zip.file('cover.jpg', coverArt);
+        }
 
         onProgress?.({
             stage: 'fetching',
@@ -904,6 +1057,11 @@ export async function downloadPlaylist(
             if (!track || !track.id) {
                 console.warn(`Skipping undefined track at index ${i}`);
                 continue;
+            }
+
+            // Append version to title if present (fixes UI and Filename)
+            if (track.version) {
+                track.title = `${track.title} (${track.version})`;
             }
 
             const trackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
@@ -979,5 +1137,7 @@ export async function downloadPlaylist(
             message: error instanceof Error ? error.message : 'Playlist download failed'
         });
         throw error;
+    } finally {
+        await releaseWakeLock(wakeLockSentinel);
     }
 }
