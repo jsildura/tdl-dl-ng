@@ -4,7 +4,6 @@
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
 import JSZip from 'jszip';
 import { getStreamInfo, getStreamInfoAtmos, getTrack, getAlbum, getPlaylist, getAlbumTracks, getPlaylistTracks, getLyrics, getWorkerUrl, TidalTrack, TidalAlbum, TidalPlaylist, StreamInfo } from './tidal-client';
 import { getSettings } from './settings';

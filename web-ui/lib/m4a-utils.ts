@@ -16,7 +16,6 @@
 
 export async function injectReplayGain(fileBuffer: Uint8Array, tags: Record<string, string>): Promise<Uint8Array> {
     const dataView = new DataView(fileBuffer.buffer);
-    let offset = 0;
 
     // 1. Find 'moov' atom
     const moovOffset = findAtom(dataView, 'moov', 0);
@@ -27,7 +26,7 @@ export async function injectReplayGain(fileBuffer: Uint8Array, tags: Record<stri
     const moovSize = dataView.getUint32(moovOffset);
 
     // 2. Find 'udta' inside 'moov'
-    let udtaOffset = findAtom(dataView, 'udta', moovOffset + 8, moovOffset + moovSize);
+    const udtaOffset = findAtom(dataView, 'udta', moovOffset + 8, moovOffset + moovSize);
 
     // If udta doesn't exist, we'd need to resize moov and insert it (complex).
     // FFmpeg usually creates udta if metadata exists. If not found, we skip for safety.
@@ -38,7 +37,7 @@ export async function injectReplayGain(fileBuffer: Uint8Array, tags: Record<stri
     const udtaSize = dataView.getUint32(udtaOffset);
 
     // 3. Find 'meta' inside 'udta'
-    let metaOffset = findAtom(dataView, 'meta', udtaOffset + 8, udtaOffset + udtaSize);
+    const metaOffset = findAtom(dataView, 'meta', udtaOffset + 8, udtaOffset + udtaSize);
     if (metaOffset === -1) {
         console.warn('M4A: meta atom not found, skipping ReplayGain injection');
         return fileBuffer;
@@ -47,7 +46,7 @@ export async function injectReplayGain(fileBuffer: Uint8Array, tags: Record<stri
 
     // 4. Find 'ilst' inside 'meta'
     // meta atom usually has 4 bytes of version/flags after size+type
-    let ilstOffset = findAtom(dataView, 'ilst', metaOffset + 12, metaOffset + metaSize);
+    const ilstOffset = findAtom(dataView, 'ilst', metaOffset + 12, metaOffset + metaSize);
     if (ilstOffset === -1) {
         console.warn('M4A: ilst atom not found, skipping ReplayGain injection');
         return fileBuffer;
