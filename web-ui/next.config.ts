@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   // Enable static export for Cloudflare Pages
   output: 'export',
 
+  // Disable source maps in production to protect codebase
+  productionBrowserSourceMaps: false,
+
+  // Remove X-Powered-By header for security
+  poweredByHeader: false,
+
   // Disable image optimization (not supported on static export)
   images: {
     unoptimized: true,
