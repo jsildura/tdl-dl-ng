@@ -1,8 +1,8 @@
 
 "use client";
 
-import { Activity } from "lucide-react";
-import { DownloadProgress } from "../lib/downloader";
+import { Activity, RotateCcw } from "lucide-react";
+import { DownloadProgress, triggerSaveDialog } from "../lib/downloader";
 
 interface DownloadQueueProps {
     progress?: DownloadProgress | null;
@@ -37,9 +37,22 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
                     <Activity className="w-6 h-6 text-primary" />
                     Active Download
                 </h3>
-                <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
-                    {progress ? getStatusText() : 'Idle'}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
+                        {progress ? getStatusText() : 'Idle'}
+                    </span>
+                    {/* Resave button for mobile browsers that fail auto-download */}
+                    {progress?.stage === 'complete' && progress.blob && progress.filename && (
+                        <button
+                            onClick={() => triggerSaveDialog(progress.blob!, progress.filename!)}
+                            className="flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full bg-tertiary text-on-tertiary hover:opacity-90 transition-opacity"
+                            title="Re-trigger download if file didn't save"
+                        >
+                            <RotateCcw className="w-3 h-3" />
+                            Resave
+                        </button>
+                    )}
+                </div>
             </div>
 
             {progress ? (

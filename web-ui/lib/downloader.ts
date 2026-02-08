@@ -81,6 +81,9 @@ export interface DownloadProgress {
     totalTracks?: number;
     trackName?: string;
     isAtmos?: boolean;
+    // For resave functionality on mobile
+    blob?: Blob;
+    filename?: string;
 }
 
 export interface TrackDownloadResult {
@@ -99,6 +102,23 @@ export interface PlaylistDownloadResult {
 }
 
 export type ProgressCallback = (progress: DownloadProgress) => void;
+
+/**
+ * Trigger browser save dialog for a blob
+ * Used for resave functionality on mobile browsers
+ */
+export function triggerSaveDialog(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    // Cleanup URL after a delay
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
 
 /**
  * Load FFmpeg WASM (lazy initialization)
@@ -721,19 +741,9 @@ export async function downloadTrack(
         const filename = `${formatFilename(track)}.${outputExtension}`;
 
         // Trigger browser save dialog
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerSaveDialog(blob, filename);
 
-        // Cleanup URL after a delay
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName, isAtmos: isAtmosStream });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName, isAtmos: isAtmosStream, blob, filename });
 
         return { track, isAtmos: isAtmosStream };
 
@@ -985,20 +995,12 @@ export async function downloadAlbum(
 
         onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
 
+        const filename = `${albumFolder}.zip`;
+
         // Trigger browser save dialog
-        const url = URL.createObjectURL(zipBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${albumFolder}.zip`;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        triggerSaveDialog(zipBlob, filename);
 
-        // Cleanup URL after a delay
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', blob: zipBlob, filename });
 
         return { album, isAtmos: hasAtmosTrack };
 
@@ -1121,20 +1123,10 @@ export async function downloadPlaylist(
             .trim();
 
         // Trigger browser save dialog
-        const url = URL.createObjectURL(zipBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        // Use playlist title in filename
-        link.download = `${playlistFolder}.zip`;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const filename = `${playlistFolder}.zip`;
+        triggerSaveDialog(zipBlob, filename);
 
-        // Cleanup URL after a delay
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-
-        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!' });
+        onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', blob: zipBlob, filename });
 
         return { playlist, isAtmos: hasAtmosTrack };
 
