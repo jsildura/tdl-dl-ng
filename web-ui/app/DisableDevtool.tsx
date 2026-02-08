@@ -14,7 +14,7 @@ export default function DisableDevtoolComponent() {
 
         if (!isLocalhost) {
             DisableDevtool({
-                disableMenu: true,
+                disableMenu: false,
                 clearLog: true,
                 disableSelect: false,
                 disableCopy: false,
