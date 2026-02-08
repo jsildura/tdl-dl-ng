@@ -49,7 +49,6 @@ async function requestWakeLock(): Promise<WakeLockSentinel | null> {
     try {
         if ('wakeLock' in navigator) {
             const sentinel = await navigator.wakeLock.request('screen');
-            console.log('Screen Wake Lock acquired');
             return sentinel;
         }
     } catch (err) {
@@ -66,7 +65,6 @@ async function releaseWakeLock(sentinel: WakeLockSentinel | null): Promise<void>
     if (sentinel) {
         try {
             await sentinel.release();
-            console.log('Screen Wake Lock released');
         } catch (err) {
             console.warn('Failed to release Screen Wake Lock:', err);
         }
@@ -151,19 +149,88 @@ async function loadFFmpeg(onProgress?: ProgressCallback): Promise<FFmpeg> {
 
 /**
  * Download a file from URL with progress tracking
+ * Supports parallel Range-based downloading when multi_thread_download is enabled
  */
 async function downloadWithProgress(
     url: string,
     onProgress?: ProgressCallback
 ): Promise<ArrayBuffer> {
+    const settings = getSettings();
+    const CONCURRENCY_LIMIT = 4; // Number of parallel chunks
+
+    // First, do a HEAD request to get Content-Length and check Range support
+    let contentLength = 0;
+    let supportsRange = false;
+
+    try {
+        const headResponse = await fetch(url, { method: 'HEAD' });
+        if (headResponse.ok) {
+            const lengthHeader = headResponse.headers.get('Content-Length');
+            contentLength = lengthHeader ? parseInt(lengthHeader, 10) : 0;
+            const acceptRanges = headResponse.headers.get('Accept-Ranges');
+            supportsRange = acceptRanges === 'bytes' || acceptRanges !== 'none';
+        }
+    } catch (e) {
+        console.warn('HEAD request failed, falling back to single-stream download:', e);
+    }
+
+    // Use parallel Range download if: setting enabled, content length known, and server supports ranges
+    if (settings.multi_thread_download && contentLength > 0 && supportsRange) {
+
+        const chunkSize = Math.ceil(contentLength / CONCURRENCY_LIMIT);
+        const downloadedChunks: (Uint8Array | null)[] = new Array(CONCURRENCY_LIMIT).fill(null);
+        let completedBytes = 0;
+
+        // Download each chunk in parallel
+        const downloadChunk = async (index: number): Promise<void> => {
+            const start = index * chunkSize;
+            const end = Math.min(start + chunkSize - 1, contentLength - 1);
+
+            const response = await fetch(url, {
+                headers: {
+                    'Range': `bytes=${start}-${end}`
+                }
+            });
+
+            if (!response.ok && response.status !== 206) {
+                throw new Error(`Range download failed: ${response.status}`);
+            }
+
+            const buffer = await response.arrayBuffer();
+            downloadedChunks[index] = new Uint8Array(buffer);
+            completedBytes += buffer.byteLength;
+
+            const progress = Math.round((completedBytes / contentLength) * 100);
+            onProgress?.({ stage: 'fetching', progress, message: `Downloading... ${progress}%` });
+        };
+
+        // Start all chunk downloads in parallel
+        const promises: Promise<void>[] = [];
+        for (let i = 0; i < CONCURRENCY_LIMIT; i++) {
+            promises.push(downloadChunk(i));
+        }
+
+        await Promise.all(promises);
+
+        // Combine all chunks in order
+        const combined = new Uint8Array(contentLength);
+        let offset = 0;
+        for (const chunk of downloadedChunks) {
+            if (chunk) {
+                combined.set(chunk, offset);
+                offset += chunk.length;
+            }
+        }
+        return combined.buffer;
+    }
+
     const response = await fetch(url);
 
     if (!response.ok) {
         throw new Error(`Download failed: ${response.status}`);
     }
 
-    const contentLength = response.headers.get('Content-Length');
-    const total = contentLength ? parseInt(contentLength, 10) : 0;
+    const total = contentLength || parseInt(response.headers.get('Content-Length') || '0', 10);
 
     const reader = response.body?.getReader();
     if (!reader) {
@@ -849,11 +916,9 @@ async function processTrackData(
         // Segmented DASH stream
         audioData = await downloadSegments(streamInfo.streamUrls);
     } else if (streamInfo.streamUrl) {
-        const audioResponse = await fetch(streamInfo.streamUrl);
-        if (!audioResponse.ok) {
-            throw new Error(`Download failed: ${audioResponse.status}`);
-        }
-        audioData = new Uint8Array(await audioResponse.arrayBuffer());
+        // Single-file stream - use downloadWithProgress for Range-based parallel download
+        const audioBuffer = await downloadWithProgress(streamInfo.streamUrl);
+        audioData = new Uint8Array(audioBuffer);
     } else {
         throw new Error('No stream URL available');
     }

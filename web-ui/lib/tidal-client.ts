@@ -262,20 +262,6 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
     const data = await response.json();
 
-    // Debug: Log stream response to see ReplayGain fields
-    console.log('[DEBUG] Stream response:', {
-        trackId: data.trackId,
-        audioQuality: data.audioQuality,
-        manifestMimeType: data.manifestMimeType,
-        // ReplayGain fields (check if these exist)
-        albumReplayGain: data.albumReplayGain,
-        albumPeakAmplitude: data.albumPeakAmplitude,
-        trackReplayGain: data.trackReplayGain,
-        trackPeakAmplitude: data.trackPeakAmplitude,
-        // Show all keys to find correct field names
-        allKeys: Object.keys(data),
-    });
-
     // Decode manifest to get actual stream URL
     let streamUrl = '';
     let streamUrls: string[] = [];

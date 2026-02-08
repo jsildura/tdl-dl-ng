@@ -48,7 +48,6 @@
         },
 
         init() {
-            console.log('[Anti-AdBlock] Initializing...');
             // Kickstart the detection process
             this.runInitialChecks();
             this.startLoop();
@@ -258,7 +257,6 @@
                 for (const containerId of this.config.ids.watchedAdContainers) {
                     const el = document.getElementById(containerId);
                     if (!el || this.isBlocked(el)) {
-                        console.log('[Anti-AdBlock] Watched container blocked:', containerId);
                         detected = true;
                         break;
                     }
@@ -267,7 +265,6 @@
 
             // Check Method D: Network Block (External Script Failure) - Primary Check
             if (window.isAdScriptBlocked === true) {
-                console.log('[Anti-AdBlock] Network blocking detected (External script failed to load)');
                 detected = true;
             }
 
@@ -282,12 +279,10 @@
                 probeScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?t=' + Date.now();
                 probeScript.async = true;
                 probeScript.onerror = () => {
-                    console.log('[Anti-AdBlock] Network blocking detected (Script probe failed)');
                     window._adBlockProbeError = true;
                     this.createWarningModal();
                 };
                 probeScript.onload = () => {
-                    console.log('[Anti-AdBlock] Script probe loaded (no blocker detected via probe)');
                     window._adBlockProbeLoaded = true;
                 };
                 document.head.appendChild(probeScript);
@@ -296,7 +291,6 @@
                 // Only trigger if neither onload nor onerror fired
                 setTimeout(() => {
                     if (!window._adBlockProbeLoaded && !window._adBlockProbeError && !this.state.warningActive) {
-                        console.log('[Anti-AdBlock] Timeout fallback: Script did not load (likely Brave Shields)');
                         this.createWarningModal();
                     }
                 }, 3000);
