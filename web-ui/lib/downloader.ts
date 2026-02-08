@@ -190,38 +190,48 @@ async function downloadSegments(
     const totalSegments = urls.length;
 
     if (settings.multi_thread_download) {
-        // Concurrent download with limited parallelism
+        // Concurrent download with sliding window (queue) approach
+        // Instead of waiting for entire batches, start a new download as soon as one finishes
         const CONCURRENCY_LIMIT = 6;
         const downloadedChunks: (Uint8Array | null)[] = new Array(totalSegments).fill(null);
         let completedSegments = 0;
+        let nextIndex = 0; // Next segment index to start downloading
 
-        // Process segments in batches
-        for (let batchStart = 0; batchStart < totalSegments; batchStart += CONCURRENCY_LIMIT) {
-            const batchEnd = Math.min(batchStart + CONCURRENCY_LIMIT, totalSegments);
-            const batchPromises: Promise<void>[] = [];
+        // Worker function: downloads one segment and recursively picks up the next
+        const downloadWorker = async (): Promise<void> => {
+            while (nextIndex < totalSegments) {
+                const segmentIndex = nextIndex;
+                nextIndex++; // Claim this index immediately
 
-            for (let i = batchStart; i < batchEnd; i++) {
-                const url = urls[i];
-                const segmentIndex = i;
-
-                const downloadPromise = downloadWithProgress(url).then((buffer) => {
+                const url = urls[segmentIndex];
+                try {
+                    const buffer = await downloadWithProgress(url);
                     const chunk = new Uint8Array(buffer);
                     downloadedChunks[segmentIndex] = chunk;
-                    completedSegments++;
+                } catch (error) {
+                    console.error(`Failed to download segment ${segmentIndex}:`, error);
+                    // Store empty chunk to maintain order, will be handled in combine step
+                    downloadedChunks[segmentIndex] = new Uint8Array(0);
+                }
 
-                    const overallProgress = Math.round((completedSegments / totalSegments) * 100);
-                    onProgress?.({
-                        stage: 'fetching',
-                        progress: overallProgress,
-                        message: `Downloading segments... ${completedSegments}/${totalSegments}`
-                    });
+                completedSegments++;
+                const overallProgress = Math.round((completedSegments / totalSegments) * 100);
+                onProgress?.({
+                    stage: 'fetching',
+                    progress: overallProgress,
+                    message: `Downloading segments... ${completedSegments}/${totalSegments}`
                 });
-
-                batchPromises.push(downloadPromise);
             }
+        };
 
-            await Promise.all(batchPromises);
+        // Start CONCURRENCY_LIMIT workers in parallel
+        const workers: Promise<void>[] = [];
+        for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, totalSegments); i++) {
+            workers.push(downloadWorker());
         }
+
+        // Wait for all workers to complete
+        await Promise.all(workers);
 
         // Combine all chunks in order
         let totalLength = 0;
