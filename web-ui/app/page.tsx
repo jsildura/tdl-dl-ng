@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { UrlInput } from "../components/UrlInput";
 import { DownloadQueue } from "../components/DownloadQueue";
 import { api } from "../lib/api";
@@ -317,13 +318,17 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="text-center pt-12 space-y-6">
-          {totalDownloads > 0 && (
-            <div>
-              <span className="inline-flex items-center text-sm font-medium text-primary px-4">
-                Current number of downloads: {totalDownloads}
-              </span>
-            </div>
-          )}
+          <div className="flex justify-center items-center gap-2 text-sm font-medium text-primary">
+            <Link href="/faq" className="hover:underline">
+              Faq
+            </Link>
+            {totalDownloads > 0 && (
+              <>
+                <span>|</span>
+                <span>Current number of downloads: {totalDownloads}</span>
+              </>
+            )}
+          </div>
 
           <p className="text-[10px] md:text-xs text-on-surface-variant/40 max-w-3xl mx-auto leading-relaxed px-4">
             Tidal Downloader Web is intended strictly for private use and requires an active Tidal-HiFi subscription; users are prohibited from engaging in music piracy or distribution and are responsible for ensuring compliance with all applicable local laws.
