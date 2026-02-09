@@ -34,12 +34,12 @@ export default function FaqPage() {
 
                     <div className="space-y-2">
                         <h2 className="text-xl font-medium text-primary">Where are files saved?</h2>
-                        <p className="text-on-surface-variant leading-relaxed">Files are saved to your device's default download location.</p>
+                        <p className="text-on-surface-variant leading-relaxed">Files are saved to your device&apos;s default download location.</p>
                     </div>
 
                     <div className="space-y-2">
                         <h2 className="text-xl font-medium text-primary">Is the downloaded audio quality the same as the source?</h2>
-                        <p className="text-on-surface-variant leading-relaxed">Yes, the files are decrypted directly from Tidal's servers and are bit-perfect copies of the source stream.</p>
+                        <p className="text-on-surface-variant leading-relaxed">Yes, the files are decrypted directly from Tidal&apos;s servers and are bit-perfect copies of the source stream.</p>
                     </div>
                 </div>
             </div>
