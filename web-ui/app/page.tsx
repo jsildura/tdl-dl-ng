@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import BannerAd from "../components/BannerAd";
 import { UrlInput } from "../components/UrlInput";
 import { DownloadQueue } from "../components/DownloadQueue";
 import { api } from "../lib/api";
@@ -240,6 +241,7 @@ export default function Home() {
         </header>
 
         <div className="space-y-12">
+          <BannerAd />
           <UrlInput onDownload={handleUrlDownload} isLoading={isLoading} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">

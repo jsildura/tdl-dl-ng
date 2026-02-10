@@ -56,7 +56,7 @@ export default function SettingsPage() {
     return (
         <div className="min-h-screen bg-background text-on-background p-4 md:p-6 font-roboto selection:bg-primary-container selection:text-on-primary-container">
             <div className="max-w-2xl mx-auto space-y-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex flex-row justify-between items-center gap-4">
                     <h1 className="text-3xl font-normal tracking-tight text-on-surface">Settings</h1>
                     <Link
                         href="/"
