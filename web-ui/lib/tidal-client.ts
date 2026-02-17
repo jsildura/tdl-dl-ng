@@ -64,6 +64,7 @@ export interface TidalPlaylist {
     numberOfTracks: number;
     duration: number;
     image: string;
+    squareImage: string;
     created: string;
     lastUpdated: string;
 }
@@ -359,21 +360,24 @@ export async function getStreamInfo(trackId: string | number): Promise<StreamInf
 
 /**
  * Get Dolby Atmos stream info for a track
- * This uses a dedicated endpoint for Atmos streaming
- * The worker exchanges the refresh token for an Atmos-authorized access token
+ * Uses the Atmos-specific access token obtained via token swap.
+ * The Atmos client credentials are required to get E-AC-3 JOC streams.
  */
 export async function getStreamInfoAtmos(trackId: string | number): Promise<StreamInfo> {
-    // Import getRefreshToken dynamically to avoid circular dependency
-    const { getRefreshToken } = await import('./auth');
+    const { getValidAtmosToken } = await import('./auth');
 
     const workerUrl = getWorkerUrl();
-    const refreshToken = getRefreshToken();
+    const token = await getValidAtmosToken();
 
-    if (!refreshToken) {
-        throw new Error('Not authenticated - no refresh token');
+    if (!token) {
+        throw new Error('Atmos token not available - enable Dolby Atmos in settings to authenticate');
     }
 
-    const response = await fetch(`${workerUrl}/stream-atmos?trackId=${trackId}&refreshToken=${encodeURIComponent(refreshToken)}`);
+    const response = await fetch(`${workerUrl}/stream-atmos?trackId=${trackId}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

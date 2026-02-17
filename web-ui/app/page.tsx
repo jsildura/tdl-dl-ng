@@ -23,6 +23,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState<AuthStatus>({ logged_in: false });
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
   const [totalDownloads, setTotalDownloads] = useState<number>(0);
@@ -62,12 +63,16 @@ export default function Home() {
     setIsLoading(true);
     setError("");
     setDownloadProgress({ stage: 'fetching', progress: 0, message: 'Starting download...' });
+    setLogs([]); // Reset logs for new download
 
     try {
       const result = await api.download(
         { url },
         (progress) => {
           setDownloadProgress(progress);
+        },
+        (logMessage) => {
+          setLogs(prev => [...prev, logMessage]);
         }
       ) as { status: string; type?: string; data?: TidalTrack | TidalAlbum | TidalPlaylist; isAtmos?: boolean };
 
@@ -247,7 +252,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="space-y-2">
               <h2 className="text-base md:text-2xl font-normal text-on-surface">Downloads</h2>
-              <DownloadQueue progress={downloadProgress} />
+              <DownloadQueue progress={downloadProgress} logs={logs} />
             </div>
 
             <div className="space-y-2">

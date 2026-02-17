@@ -124,6 +124,126 @@ async function handleTokenRefresh(request: Request, env: Env, origin: string): P
     });
 }
 
+// Atmos Token Swap - Takes the user's existing refresh token and refreshes it
+// using the Atmos client credentials to get an Atmos-specific access token.
+// This matches how tidal-dl-ng CLI handles Atmos: it swaps client_id/secret
+// and re-authenticates with the existing session tokens.
+async function handleAtmosTokenSwap(request: Request, env: Env, origin: string): Promise<Response> {
+    if (!env.TIDAL_ATMOS_CLIENT_ID || !env.TIDAL_ATMOS_CLIENT_SECRET) {
+        return new Response(JSON.stringify({ error: 'Atmos credentials not configured' }), {
+            status: 501,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    const body = await request.json() as { refresh_token: string };
+
+    if (!body.refresh_token) {
+        return new Response(JSON.stringify({ error: 'Missing refresh_token. Login to Tidal first.' }), {
+            status: 400,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    // Use the existing refresh token but with Atmos client credentials
+    const params = new URLSearchParams({
+        client_id: env.TIDAL_ATMOS_CLIENT_ID,
+        client_secret: env.TIDAL_ATMOS_CLIENT_SECRET,
+        refresh_token: body.refresh_token,
+        grant_type: 'refresh_token',
+    });
+
+    const response = await fetch(`${TIDAL_AUTH_URL}/token`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        return new Response(JSON.stringify({
+            error: 'Atmos token swap failed',
+            details: data,
+        }), {
+            status: response.status,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    return new Response(JSON.stringify(data), {
+        status: response.status,
+        headers: {
+            ...corsHeaders(origin, env),
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+// Atmos Refresh token - refreshes an existing Atmos token
+async function handleAtmosTokenRefresh(request: Request, env: Env, origin: string): Promise<Response> {
+    if (!env.TIDAL_ATMOS_CLIENT_ID || !env.TIDAL_ATMOS_CLIENT_SECRET) {
+        return new Response(JSON.stringify({ error: 'Atmos credentials not configured' }), {
+            status: 501,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    const body = await request.json() as { refresh_token: string };
+
+    const params = new URLSearchParams({
+        client_id: env.TIDAL_ATMOS_CLIENT_ID,
+        client_secret: env.TIDAL_ATMOS_CLIENT_SECRET,
+        refresh_token: body.refresh_token,
+        grant_type: 'refresh_token',
+    });
+
+    const response = await fetch(`${TIDAL_AUTH_URL}/token`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        return new Response(JSON.stringify({
+            error: 'Atmos token refresh failed',
+            details: data,
+        }), {
+            status: response.status,
+            headers: {
+                ...corsHeaders(origin, env),
+                'Content-Type': 'application/json',
+            },
+        });
+    }
+
+    return new Response(JSON.stringify(data), {
+        status: response.status,
+        headers: {
+            ...corsHeaders(origin, env),
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
 // Proxy API requests to Tidal
 async function handleApiProxy(request: Request, env: Env, origin: string, pathname: string): Promise<Response> {
     const url = new URL(request.url);
@@ -195,14 +315,14 @@ async function handleStreamUrl(request: Request, env: Env, origin: string): Prom
 }
 
 // Get Dolby Atmos stream URL for a track
-// This requires exchanging the user's refresh token for an Atmos-authorized access token
+// The client provides a valid Atmos access token via Authorization header
 async function handleStreamAtmos(request: Request, env: Env, origin: string): Promise<Response> {
     const url = new URL(request.url);
     const trackId = url.searchParams.get('trackId');
-    const refreshToken = url.searchParams.get('refreshToken');
+    const authHeader = request.headers.get('Authorization');
 
-    if (!trackId || !refreshToken) {
-        return new Response(JSON.stringify({ error: 'Missing trackId or refreshToken' }), {
+    if (!trackId || !authHeader) {
+        return new Response(JSON.stringify({ error: 'Missing trackId or authorization' }), {
             status: 400,
             headers: {
                 ...corsHeaders(origin, env),
@@ -211,75 +331,26 @@ async function handleStreamAtmos(request: Request, env: Env, origin: string): Pr
         });
     }
 
-    // Check if Atmos credentials are available
-    if (!env.TIDAL_ATMOS_CLIENT_ID || !env.TIDAL_ATMOS_CLIENT_SECRET) {
-        return new Response(JSON.stringify({ error: 'Atmos credentials not configured' }), {
-            status: 501,
-            headers: {
-                ...corsHeaders(origin, env),
-                'Content-Type': 'application/json',
-            },
-        });
-    }
+    // Use the Atmos token to get playback info
+    // Note: Atmos is only available at HIGH quality (320kbps)
+    const playbackUrl = `${TIDAL_API_URL}/tracks/${trackId}/playbackinfopostpaywall?audioquality=HIGH&playbackmode=STREAM&assetpresentation=FULL`;
 
-    try {
-        // Step 1: Exchange refresh token for Atmos-authorized access token
-        const tokenResponse = await fetch(`${TIDAL_AUTH_URL}/token`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                client_id: env.TIDAL_ATMOS_CLIENT_ID,
-                client_secret: env.TIDAL_ATMOS_CLIENT_SECRET,
-                refresh_token: refreshToken,
-                grant_type: 'refresh_token',
-            }),
-        });
+    const response = await fetch(playbackUrl, {
+        headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+        },
+    });
 
-        if (!tokenResponse.ok) {
-            const tokenError = await tokenResponse.json();
-            return new Response(JSON.stringify({ error: 'Failed to get Atmos token', details: tokenError }), {
-                status: tokenResponse.status,
-                headers: {
-                    ...corsHeaders(origin, env),
-                    'Content-Type': 'application/json',
-                },
-            });
-        }
+    const data = await response.json();
 
-        const tokenData = await tokenResponse.json() as { access_token: string };
-        const atmosToken = tokenData.access_token;
-
-        // Step 2: Use Atmos token to get playback info with DOLBY_ATMOS mode
-        // Note: Atmos is only available at HIGH quality (320kbps)
-        const playbackUrl = `${TIDAL_API_URL}/tracks/${trackId}/playbackinfopostpaywall?audioquality=HIGH&playbackmode=STREAM&assetpresentation=FULL`;
-
-        const response = await fetch(playbackUrl, {
-            headers: {
-                'Authorization': `Bearer ${atmosToken}`,
-                'Content-Type': 'application/json',
-            },
-        });
-
-        const data = await response.json();
-
-        return new Response(JSON.stringify(data), {
-            status: response.status,
-            headers: {
-                ...corsHeaders(origin, env),
-                'Content-Type': 'application/json',
-            },
-        });
-    } catch (error) {
-        return new Response(JSON.stringify({ error: 'Atmos stream request failed', message: String(error) }), {
-            status: 500,
-            headers: {
-                ...corsHeaders(origin, env),
-                'Content-Type': 'application/json',
-            },
-        });
-    }
+    return new Response(JSON.stringify(data), {
+        status: response.status,
+        headers: {
+            ...corsHeaders(origin, env),
+            'Content-Type': 'application/json',
+        },
+    });
 }
 
 // Main request handler
@@ -337,6 +408,16 @@ export default {
 
             if (pathname === '/auth/refresh') {
                 return handleTokenRefresh(request, env, origin);
+            }
+
+            // Atmos auth endpoints
+            // Token swap: takes existing refresh token + Atmos credentials to get Atmos access token
+            if (pathname === '/auth/atmos-swap') {
+                return handleAtmosTokenSwap(request, env, origin);
+            }
+
+            if (pathname === '/auth/refresh-atmos') {
+                return handleAtmosTokenRefresh(request, env, origin);
             }
 
             // Stream URL endpoint

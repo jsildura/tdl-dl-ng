@@ -3,12 +3,14 @@
 
 import { Activity, RotateCcw } from "lucide-react";
 import { DownloadProgress, triggerSaveDialog } from "../lib/downloader";
+import { DownloadConsole } from "./DownloadConsole";
 
 interface DownloadQueueProps {
     progress?: DownloadProgress | null;
+    logs?: string[];
 }
 
-export function DownloadQueue({ progress }: DownloadQueueProps) {
+export function DownloadQueue({ progress, logs = [] }: DownloadQueueProps) {
     // For serverless mode, progress is passed in as a prop
     // For Python backend mode, we'd use SSE (legacy mode)
 
@@ -104,6 +106,8 @@ export function DownloadQueue({ progress }: DownloadQueueProps) {
                     No active downloads
                 </div>
             )}
+
+            <DownloadConsole logs={logs} />
         </div>
     );
 }

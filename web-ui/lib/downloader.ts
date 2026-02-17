@@ -635,7 +635,8 @@ async function embedMetadata(
  */
 export async function downloadTrack(
     trackId: string | number,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    onLog?: (message: string) => void
 ): Promise<TrackDownloadResult> {
     let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
@@ -681,6 +682,10 @@ export async function downloadTrack(
                 isAtmosStream = true;
             } catch (e) {
                 console.warn('Failed to get Atmos stream, falling back to normal stream:', e);
+                // Emit log for UI console
+                const trackName = `${track.title} ${track.version ? `(${track.version})` : ''} - ${track.artist?.name || 'Unknown'}`;
+                onLog?.(`${trackName} | Failed to get atmos streams\nFallback to selected audio quality instead.`);
+
                 streamInfo = await getStreamInfo(trackId);
             }
         } else {
@@ -703,6 +708,7 @@ export async function downloadTrack(
                 }
             } catch (e) {
                 console.warn('Failed to fetch cover art:', e);
+                onLog?.(`${trackName} | [WARN] Failed to fetch cover art: ${e instanceof Error ? e.message : 'Unknown error'}`);
             }
         }
 
@@ -710,6 +716,9 @@ export async function downloadTrack(
         let lyrics: string | null = null;
         if (settings.lyrics_embed) {
             lyrics = await getLyrics(trackId);
+            if (!lyrics) {
+                onLog?.(`${trackName} | [WARN] No lyrics available for this track.`);
+            }
         }
 
         onProgress?.({ stage: 'fetching', progress: 20, message: 'Downloading audio...', trackName, isAtmos: isAtmosStream });
@@ -772,6 +781,7 @@ export async function downloadTrack(
                     genres = await getGenresByISRC(track.isrc);
                 } catch (e) {
                     console.warn('Failed to fetch genres:', e);
+                    onLog?.(`${trackName} | [WARN] Failed to fetch genre from Musicbrainz.`);
                 }
             }
 
@@ -810,6 +820,7 @@ export async function downloadTrack(
         // Trigger browser save dialog
         triggerSaveDialog(blob, filename);
 
+        onLog?.(`${trackName} | Success`);
         onProgress?.({ stage: 'complete', progress: 100, message: 'Download complete!', trackName, isAtmos: isAtmosStream, blob, filename });
 
         return { track, isAtmos: isAtmosStream };
@@ -821,6 +832,8 @@ export async function downloadTrack(
             progress: 0,
             message: error instanceof Error ? error.message : 'Download failed'
         });
+        const trackNameForError = (typeof trackId === 'string' || typeof trackId === 'number') ? `Track ${trackId}` : 'Unknown Track';
+        onLog?.(`${trackNameForError} | Failed`);
         throw error;
     } finally {
         await releaseWakeLock(wakeLockSentinel);
@@ -840,11 +853,14 @@ export function isFFmpegLoaded(): boolean {
  * @param trackId - The track ID to process
  * @param prefetchedTrack - Optional pre-fetched track metadata (avoids extra API call)
  * @param prefetchedAlbum - Optional pre-fetched album metadata for metadata embedding
+ * @param playlistContext - Optional playlist context for playlist download mode
  */
 async function processTrackData(
     trackId: string | number,
     prefetchedTrack?: TidalTrack,
-    prefetchedAlbum?: TidalAlbum | null
+    prefetchedAlbum?: TidalAlbum | null,
+    playlistContext?: { playlist: TidalPlaylist; position: number; totalTracks: number; coverData?: Uint8Array | null } | null,
+    onLog?: (message: string) => void
 ): Promise<{ data: Uint8Array; filename: string; track: TidalTrack; isAtmos: boolean }> {
     const settings = getSettings();
 
@@ -853,7 +869,35 @@ async function processTrackData(
 
     // Use pre-fetched album or fetch it for full metadata
     let album: TidalAlbum | null = prefetchedAlbum ?? null;
-    if (!album && track.album?.id) {
+    const isPlaylistMode = settings.playlist_details_mode && playlistContext;
+
+    if (isPlaylistMode) {
+        // In playlist mode, override track metadata with playlist context
+        track.trackNumber = playlistContext.position;
+        track.volumeNumber = 1;
+
+        // Override track.album so embedMetadata reads the playlist name and cover
+        track.album = {
+            ...track.album,
+            title: playlistContext.playlist.title,
+            cover: playlistContext.playlist.squareImage || playlistContext.playlist.image || track.album?.cover || '',
+        };
+
+        // Create a synthetic album from playlist info
+        album = {
+            id: 0,
+            title: playlistContext.playlist.title,
+            duration: playlistContext.playlist.duration,
+            numberOfTracks: playlistContext.totalTracks,
+            numberOfVolumes: 1,
+            explicit: false,
+            audioQuality: '',
+            releaseDate: playlistContext.playlist.lastUpdated || '',
+            artist: track.artist ? { id: track.artist.id, name: track.artist.name } : { id: 0, name: 'Various Artists' },
+            artists: [],
+            cover: playlistContext.playlist.squareImage || playlistContext.playlist.image || '',
+        };
+    } else if (!album && track.album?.id) {
         try {
             album = await getAlbum(track.album.id);
         } catch (e) {
@@ -874,6 +918,10 @@ async function processTrackData(
             isAtmosStream = true;
         } catch (e) {
             console.warn('Failed to get Atmos stream, falling back to normal stream:', e);
+            // Emit log for UI console
+            const trackName = `${track.title} ${track.version ? `(${track.version})` : ''} - ${track.artist?.name || 'Unknown'}`;
+            onLog?.(`${trackName} | Failed to get atmos streams\nFallback to selected audio quality instead.`);
+
             streamInfo = await getStreamInfo(trackId);
         }
     } else {
@@ -886,7 +934,10 @@ async function processTrackData(
 
     // Get cover art (through proxy to avoid CORS/timeout issues)
     let coverData: Uint8Array | null = null;
-    if (settings.metadata_cover_embed && track.album?.cover) {
+    if (isPlaylistMode && playlistContext.coverData) {
+        // Use pre-fetched playlist cover art — copy it since FFmpeg's postMessage detaches the ArrayBuffer
+        coverData = new Uint8Array(playlistContext.coverData);
+    } else if (settings.metadata_cover_embed && track.album?.cover) {
         try {
             const workerUrl = getWorkerUrl();
             const coverProxyUrl = `${workerUrl}/cover?id=${track.album.cover}&size=${settings.metadata_cover_dimension}`;
@@ -896,6 +947,8 @@ async function processTrackData(
             }
         } catch (e) {
             console.warn('Failed to fetch cover art:', e);
+            const logTrackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+            onLog?.(`${logTrackName} | [WARN] Failed to fetch cover art.`);
         }
     }
 
@@ -904,8 +957,14 @@ async function processTrackData(
     if (settings.lyrics_embed) {
         try {
             lyrics = await getLyrics(trackId);
+            if (!lyrics) {
+                const logTrackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+                onLog?.(`${logTrackName} | [WARN] No lyrics available for this track.`);
+            }
         } catch {
             console.warn('Failed to fetch lyrics for track', trackId);
+            const logTrackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+            onLog?.(`${logTrackName} | [WARN] Failed to fetch lyrics.`);
         }
     }
 
@@ -938,6 +997,8 @@ async function processTrackData(
             genres = await getGenresByISRC(track.isrc);
         } catch (e) {
             console.warn('Failed to fetch genres:', e);
+            const logTrackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+            onLog?.(`${logTrackName} | [WARN] Failed to fetch genre from Musicbrainz.`);
         }
     }
 
@@ -960,6 +1021,9 @@ async function processTrackData(
 
     const filename = `${formatFilename(track)}.${outputFormat}`;
 
+    const logTrackName = `${track.artist?.name || 'Unknown'} - ${track.title || 'Unknown'}`;
+    onLog?.(`${logTrackName} | Success`);
+
     return { data: new Uint8Array(processedData), filename, track, isAtmos: isAtmosStream };
 }
 
@@ -968,7 +1032,8 @@ async function processTrackData(
  */
 export async function downloadAlbum(
     albumId: string | number,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    onLog?: (message: string) => void
 ): Promise<AlbumDownloadResult> {
     let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
@@ -986,6 +1051,11 @@ export async function downloadAlbum(
         const settings = getSettings();
 
         const totalTracks = tracks.length;
+
+        // Log album info to console
+        const albumArtist = album.artist?.name || 'Unknown Artist';
+        onLog?.(`${album.title} - ${albumArtist} | ${totalTracks} tracks\nhttps://tidal.com/browse/album/${albumId}`);
+
         const zip = new JSZip();
         const albumFolder = `${album.artist?.name || 'Unknown Artist'} - ${album.title || 'Unknown Album'}`
             .replace(/[<>:"/\\|?*]/g, '')
@@ -1031,7 +1101,7 @@ export async function downloadAlbum(
             });
 
             try {
-                const { data, filename, isAtmos } = await processTrackData(track.id, track, album);
+                const { data, filename, isAtmos } = await processTrackData(track.id, track, album, null, onLog);
                 if (isAtmos) hasAtmosTrack = true;
                 // Add track number prefix for proper ordering
                 const numberedFilename = `${String(track.trackNumber || currentTrack).padStart(2, '0')} - ${filename}`;
@@ -1050,13 +1120,20 @@ export async function downloadAlbum(
         onProgress?.({ stage: 'processing', progress: 90, message: 'Creating ZIP file...' });
 
         // Generate ZIP file
-        const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
-            onProgress?.({
-                stage: 'processing',
-                progress: 90 + (metadata.percent / 100) * 8,
-                message: `Compressing... ${Math.round(metadata.percent)}%`
+        let zipBlob: Blob;
+        try {
+            zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+                onProgress?.({
+                    stage: 'processing',
+                    progress: 90 + (metadata.percent / 100) * 8,
+                    message: `Compressing... ${Math.round(metadata.percent)}%`
+                });
             });
-        });
+            onLog?.(`${albumFolder} | Compressed`);
+        } catch (e) {
+            onLog?.(`${albumFolder} | Failed to Compress`);
+            throw e;
+        }
 
         onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
 
@@ -1076,6 +1153,7 @@ export async function downloadAlbum(
             progress: 0,
             message: error instanceof Error ? error.message : 'Album download failed'
         });
+        onLog?.(`Album ${albumId} | Failed`);
         throw error;
     } finally {
         await releaseWakeLock(wakeLockSentinel);
@@ -1087,7 +1165,8 @@ export async function downloadAlbum(
  */
 export async function downloadPlaylist(
     playlistId: string,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    onLog?: (message: string) => void
 ): Promise<PlaylistDownloadResult> {
     let wakeLockSentinel: WakeLockSentinel | null = null;
     try {
@@ -1105,11 +1184,19 @@ export async function downloadPlaylist(
         const settings = getSettings();
 
         const totalTracks = tracks.length;
+
+        // Log playlist info to console
+        onLog?.(`${playlist.title} | ${totalTracks} tracks\nhttps://tidal.com/browse/playlist/${playlistId}`);
+
         const zip = new JSZip();
 
         // Fetch cover art (1280x1280, fallback to 640x640)
         onProgress?.({ stage: 'fetching', progress: 2, message: 'Fetching cover art...' });
-        const coverArt = await fetchCoverArtBlob(playlist.image);
+        // In playlist mode, use squareImage (the actual playlist cover art); otherwise use image
+        const coverImageId = settings.playlist_details_mode
+            ? (playlist.squareImage || playlist.image)
+            : playlist.image;
+        const coverArt = await fetchCoverArtBlob(coverImageId);
         if (coverArt) {
             zip.file('cover.jpg', coverArt);
         }
@@ -1152,10 +1239,16 @@ export async function downloadPlaylist(
             });
 
             try {
-                const { data, filename, isAtmos } = await processTrackData(track.id, track, null);
+                const { data, filename, isAtmos } = await processTrackData(track.id, track, null, {
+                    playlist,
+                    position: currentTrack,
+                    totalTracks,
+                    coverData: coverArt
+                }, onLog);
                 if (isAtmos) hasAtmosTrack = true;
-                // Add track number prefix for proper ordering
-                const numberedFilename = `${String(currentTrack).padStart(2, '0')} - ${filename}`;
+                // Use playlist position or album track number depending on setting
+                const trackNum = settings.playlist_details_mode ? currentTrack : (track.trackNumber || currentTrack);
+                const numberedFilename = `${String(trackNum).padStart(2, '0')} - ${filename}`;
                 zip.file(numberedFilename, data);
 
                 // Add delay between tracks when multi-thread download is enabled to prevent rate limiting
@@ -1170,22 +1263,29 @@ export async function downloadPlaylist(
 
         onProgress?.({ stage: 'processing', progress: 90, message: 'Creating ZIP file...' });
 
-        // Generate ZIP file
-        const zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
-            onProgress?.({
-                stage: 'processing',
-                progress: 90 + (metadata.percent / 100) * 8,
-                message: `Compressing... ${Math.round(metadata.percent)}%`
-            });
-        });
-
-        onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
-
         // Use proper playlist title for folder name
         const playlistFolder = `${playlist.title || 'Unknown Playlist'}`
             .replace(/[<>:"/\\|?*]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
+
+        // Generate ZIP file
+        let zipBlob: Blob;
+        try {
+            zipBlob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+                onProgress?.({
+                    stage: 'processing',
+                    progress: 90 + (metadata.percent / 100) * 8,
+                    message: `Compressing... ${Math.round(metadata.percent)}%`
+                });
+            });
+            onLog?.(`${playlistFolder} | Compressed`);
+        } catch (e) {
+            onLog?.(`${playlistFolder} | Failed to Compress`);
+            throw e;
+        }
+
+        onProgress?.({ stage: 'complete', progress: 98, message: 'Triggering save dialog...' });
 
         // Trigger browser save dialog
         const filename = `${playlistFolder}.zip`;
@@ -1202,6 +1302,7 @@ export async function downloadPlaylist(
             progress: 0,
             message: error instanceof Error ? error.message : 'Playlist download failed'
         });
+        onLog?.(`Playlist ${playlistId} | Failed`);
         throw error;
     } finally {
         await releaseWakeLock(wakeLockSentinel);

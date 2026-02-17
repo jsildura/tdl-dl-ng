@@ -22,6 +22,7 @@ export interface TidalSettings {
     metadata_genre_lookup: boolean;
     metadata_artist_separator: '; ' | ', ' | ' / ' | ' & ';
     multi_thread_download: boolean;
+    playlist_details_mode: boolean;
 }
 
 export const DEFAULT_SETTINGS: TidalSettings = {
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS: TidalSettings = {
     metadata_genre_lookup: true,
     metadata_artist_separator: '; ',
     multi_thread_download: false,
+    playlist_details_mode: false,
 };
 
 const STORAGE_KEY = 'tidal-dl-ng-settings';

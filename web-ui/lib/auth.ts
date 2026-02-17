@@ -32,6 +32,7 @@ export interface UserInfo {
 
 const TOKEN_STORAGE_KEY = 'tidal-dl-ng-token';
 const USER_STORAGE_KEY = 'tidal-dl-ng-user';
+const ATMOS_TOKEN_STORAGE_KEY = 'tidal-dl-ng-atmos-token';
 
 // Get Worker URL from environment or default to localhost for development
 function getWorkerUrl(): string {
@@ -111,6 +112,7 @@ export function clearAuth(): void {
     if (typeof window === 'undefined') return;
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(ATMOS_TOKEN_STORAGE_KEY);
 }
 
 /**
@@ -332,5 +334,155 @@ export async function fetchUserInfo(): Promise<UserInfo | null> {
         }
         return null;
     }
+}
+
+// =============================================
+// Atmos Authentication (separate OAuth client)
+// =============================================
+
+/**
+ * Get stored Atmos token from localStorage
+ */
+export function getStoredAtmosToken(): TidalToken | null {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const stored = localStorage.getItem(ATMOS_TOKEN_STORAGE_KEY);
+        if (stored) {
+            return JSON.parse(stored);
+        }
+    } catch (error) {
+        console.error('Failed to get stored Atmos token:', error);
+    }
+    return null;
+}
+
+/**
+ * Store Atmos token in localStorage
+ */
+export function storeAtmosToken(token: TidalToken): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(ATMOS_TOKEN_STORAGE_KEY, JSON.stringify(token));
+    } catch (error) {
+        console.error('Failed to store Atmos token:', error);
+    }
+}
+
+/**
+ * Clear Atmos auth data
+ */
+export function clearAtmosAuth(): void {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(ATMOS_TOKEN_STORAGE_KEY);
+}
+
+/**
+ * Check if user has Atmos authentication
+ */
+export function isAtmosAuthenticated(): boolean {
+    const token = getStoredAtmosToken();
+    return token !== null;
+}
+
+/**
+ * Swap the existing normal session's refresh token for an Atmos access token.
+ * The Atmos client ID doesn't support device authorization, so we use
+ * the same approach as the tidal-dl-ng CLI: take the existing refresh token
+ * and refresh it using Atmos client credentials on the server side.
+ * 
+ * Requires the user to already be logged in to Tidal normally.
+ */
+export async function swapForAtmosToken(): Promise<TidalToken> {
+    const workerUrl = getWorkerUrl();
+    const normalToken = getStoredToken();
+
+    if (!normalToken?.refresh_token) {
+        throw new Error('Not logged in to Tidal. Please login first before enabling Atmos.');
+    }
+
+    const response = await fetch(`${workerUrl}/auth/atmos-swap`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: normalToken.refresh_token }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || data.details?.error_description || 'Failed to get Atmos token');
+    }
+
+    // Success - create token object
+    const token: TidalToken = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || normalToken.refresh_token,
+        token_type: data.token_type,
+        expires_in: data.expires_in,
+        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+        user_id: normalToken.user_id,
+    };
+
+    storeAtmosToken(token);
+    return token;
+}
+
+/**
+ * Refresh an expired Atmos token
+ */
+export async function refreshAtmosToken(currentToken: TidalToken): Promise<TidalToken> {
+    const workerUrl = getWorkerUrl();
+
+    const response = await fetch(`${workerUrl}/auth/refresh-atmos`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: currentToken.refresh_token }),
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to refresh Atmos token');
+    }
+
+    const data = await response.json();
+
+    const newToken: TidalToken = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || currentToken.refresh_token,
+        token_type: data.token_type,
+        expires_in: data.expires_in,
+        expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+        user_id: currentToken.user_id,
+    };
+
+    storeAtmosToken(newToken);
+    return newToken;
+}
+
+/**
+ * Get a valid Atmos access token, refreshing if necessary
+ */
+export async function getValidAtmosToken(): Promise<string | null> {
+    let token = getStoredAtmosToken();
+
+    if (!token) {
+        return null;
+    }
+
+    if (isTokenExpired(token)) {
+        try {
+            token = await refreshAtmosToken(token);
+        } catch (error) {
+            console.error('Failed to refresh Atmos token:', error);
+            clearAtmosAuth();
+            return null;
+        }
+    }
+
+    return token.access_token;
 }
 

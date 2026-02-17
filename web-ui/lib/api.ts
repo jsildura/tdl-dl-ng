@@ -71,7 +71,8 @@ export const api = {
      */
     download: async (
         data: { url?: string; media_id?: string; media_type?: string },
-        onProgress?: (progress: DownloadProgress) => void
+        onProgress?: (progress: DownloadProgress) => void,
+        onLog?: (message: string) => void
     ) => {
         let trackId: string | null = null;
         let albumId: string | null = null;
@@ -105,13 +106,13 @@ export const api = {
         // Use client-side downloader
         if (isServerless || isAuthenticated()) {
             if (trackId) {
-                const result = await downloadTrack(trackId, onProgress);
+                const result = await downloadTrack(trackId, onProgress, onLog);
                 return { status: 'completed', type: 'TRACK', data: result.track, isAtmos: result.isAtmos };
             } else if (albumId) {
-                const result = await downloadAlbum(albumId, onProgress);
+                const result = await downloadAlbum(albumId, onProgress, onLog);
                 return { status: 'completed', type: 'ALBUM', data: result.album, isAtmos: result.isAtmos };
             } else if (playlistId) {
-                const result = await downloadPlaylist(playlistId, onProgress);
+                const result = await downloadPlaylist(playlistId, onProgress, onLog);
                 return { status: 'completed', type: 'PLAYLIST', data: result.playlist, isAtmos: result.isAtmos };
             }
             throw new Error('Could not determine media type from input');
