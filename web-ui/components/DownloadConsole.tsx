@@ -18,7 +18,7 @@ export function DownloadConsole({ logs }: DownloadConsoleProps) {
     const renderLogLine = (log: string, index: number) => {
         // Check for log level based on content
         let levelColor = "text-gray-300"; // Info/Debug
-        let prefixColor = "text-yellow-500"; // Track Name default
+        const prefixColor = "text-yellow-500"; // Track Name default
 
         if (log.toLowerCase().includes("success") || log.includes("Complete")) {
             levelColor = "text-green-400";
