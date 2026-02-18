@@ -101,29 +101,37 @@ export default function RootLayout({
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
-                "@context": "https://schema.org",
-                "@type": "WebApplication",
-                name: "Tidal Downloader Web",
-                url: BASE_URL,
-                description:
-                  "Download music from Tidal in Hi-Res FLAC, MQA, and Dolby Atmos quality. Free web-based Tidal downloader with no software installation required.",
-                applicationCategory: "MultimediaApplication",
-                operatingSystem: "Any",
-                browserRequirements: "Requires a modern web browser",
-                offers: {
-                  "@type": "Offer",
-                  price: "0",
-                  priceCurrency: "USD",
+              __html: JSON.stringify([
+                {
+                  "@context": "https://schema.org",
+                  "@type": "WebSite",
+                  name: "Tidal Downloader Web",
+                  url: BASE_URL,
                 },
-                featureList: [
-                  "Hi-Res FLAC downloads",
-                  "Dolby Atmos support",
-                  "Album and playlist downloads",
-                  "No installation required",
-                  "Browser-based",
-                ],
-              }),
+                {
+                  "@context": "https://schema.org",
+                  "@type": "WebApplication",
+                  name: "Tidal Downloader Web",
+                  url: BASE_URL,
+                  description:
+                    "Download music from Tidal in Hi-Res FLAC, MQA, and Dolby Atmos quality. Free web-based Tidal downloader with no software installation required.",
+                  applicationCategory: "MultimediaApplication",
+                  operatingSystem: "Any",
+                  browserRequirements: "Requires a modern web browser",
+                  offers: {
+                    "@type": "Offer",
+                    price: "0",
+                    priceCurrency: "USD",
+                  },
+                  featureList: [
+                    "Hi-Res FLAC downloads",
+                    "Dolby Atmos support",
+                    "Album and playlist downloads",
+                    "No installation required",
+                    "Browser-based",
+                  ],
+                },
+              ]),
             }}
           />
           {children}
