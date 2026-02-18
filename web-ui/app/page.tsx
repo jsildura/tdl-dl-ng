@@ -10,7 +10,8 @@ import { api } from "../lib/api";
 import { DownloadProgress } from "../lib/downloader";
 import { TidalTrack, TidalAlbum, TidalPlaylist } from "../lib/tidal-client";
 import { addDownloadHistory, subscribeToDownloadHistory, incrementDownloadCount, subscribeToDownloadCount, DownloadHistoryItem } from "../lib/download-history";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
 
 interface AuthStatus {
   logged_in: boolean;
@@ -25,8 +26,26 @@ export default function Home() {
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDesktopMenuOpen, setIsDesktopMenuOpen] = useState(false);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
   const [totalDownloads, setTotalDownloads] = useState<number>(0);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    if (typeof document !== 'undefined' && (document as any).startViewTransition) {
+      (document as any).startViewTransition(() => {
+        setTheme(newTheme);
+      });
+    } else {
+      setTheme(newTheme);
+    }
+  };
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     api.checkStatus().then(setStatus).catch(console.error);
@@ -164,48 +183,86 @@ export default function Home() {
         <header className="relative text-center space-y-6 pt-4 md:pt-12">
 
           {/* Desktop Menu */}
-          <div className="hidden md:flex absolute top-0 right-0 gap-2 items-center">
+          <div className="hidden md:flex absolute top-0 right-0 z-50 gap-2 items-center">
             {status.logged_in ? (
-              <>
-                <span className="text-sm font-medium text-primary px-3 py-1 bg-primary-container/30 rounded-full border border-primary/20">
-                  {status.email || status.username}
-                </span>
+              <div className="relative">
                 <button
-                  onClick={handleLogout}
-                  className="text-sm font-medium text-error hover:bg-error-container/20 px-3 py-1.5 rounded-full transition-colors duration-200 cursor-pointer"
+                  onClick={() => setIsDesktopMenuOpen(!isDesktopMenuOpen)}
+                  className="p-2.5 bg-surface-container-high hover:bg-surface-container-highest rounded-full transition-all duration-200 cursor-pointer"
                 >
-                  Logout
+                  <User size={18} className="icon-contrast" />
                 </button>
-                <a href="/settings" className="text-sm font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest px-4 py-2 rounded-full transition-colors duration-200">
-                  Settings
-                </a>
-              </>
+
+                {isDesktopMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-surface-container rounded-2xl shadow-xl border border-outline-variant/20 flex flex-col overflow-hidden">
+                    <div className="px-5 py-4">
+                      <p className="text-xs text-on-surface-variant">Signed in as</p>
+                      <p className="text-sm font-medium text-primary truncate mt-0.5">
+                        {status.email || status.username}
+                      </p>
+                    </div>
+                    <div className="border-t border-outline-variant/20" />
+                    {mounted && (
+                      <button
+                        onClick={toggleTheme}
+                        className="block w-full text-left px-5 py-3 text-sm text-on-surface hover:bg-surface-container-highest transition-colors cursor-pointer"
+                      >
+                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                      </button>
+                    )}
+                    <a
+                      href="/settings"
+                      className="block w-full text-left px-5 py-3 text-sm text-on-surface hover:bg-surface-container-highest transition-colors"
+                    >
+                      Settings
+                    </a>
+                    <div className="border-t border-outline-variant/20" />
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        setIsDesktopMenuOpen(false);
+                      }}
+                      className="block w-full text-left px-5 py-3 text-sm text-error hover:bg-error-container/20 transition-colors cursor-pointer"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
-              <a href="/login" className="text-sm font-medium text-primary hover:bg-primary-container/20 px-4 py-2 rounded-full transition-colors duration-200">
+              <a href="/login" className="text-sm font-medium text-on-surface hover:bg-primary-container/20 px-4 py-2 rounded-full transition-colors duration-200">
                 Login
               </a>
             )}
           </div>
 
-          {/* Mobile Hamburger Menu */}
+          {/* Mobile Menu */}
           <div className="md:hidden absolute top-0 right-0 z-50">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="p-2 text-on-surface hover:bg-surface-container-highest rounded-full transition-colors"
-            >
-              {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+            {status.logged_in ? (
+              <>
+                <button
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-2 text-on-surface hover:bg-surface-container-highest rounded-full transition-colors"
+                >
+                  {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
 
-            {isMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-surface-container rounded-2xl shadow-xl border border-outline-variant/20 p-2 flex flex-col gap-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                {status.logged_in ? (
-                  <>
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-surface-container rounded-2xl shadow-xl border border-outline-variant/20 p-2 flex flex-col gap-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <div className="px-4 py-3 border-b border-outline-variant/20 mb-1">
                       <p className="text-xs text-on-surface-variant">Signed in as</p>
                       <p className="text-sm font-medium text-primary truncate">
                         {status.email || status.username}
                       </p>
                     </div>
+                    {mounted && (
+                      <button
+                        onClick={toggleTheme}
+                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-on-surface hover:bg-surface-container-highest rounded-xl transition-colors text-left"
+                      >
+                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                      </button>
+                    )}
                     <a href="/settings" className="flex items-center w-full px-4 py-2 text-sm text-on-surface hover:bg-surface-container-highest rounded-xl transition-colors">
                       Settings
                     </a>
@@ -218,27 +275,25 @@ export default function Home() {
                     >
                       Logout
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <a href="/login" className="block px-4 py-2 text-sm font-medium text-primary hover:bg-primary-container/20 rounded-xl transition-colors">
-                      Login
-                    </a>
-                  </>
+                  </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <a href="/login" className="text-sm font-medium text-on-surface hover:bg-primary-container/20 px-4 py-2 rounded-full transition-colors duration-200">
+                Login
+              </a>
             )}
           </div>
 
           <div className="space-y-4 pt-8">
-            <h1 className="text-2xl md:text-6xl font-bold tracking-tight text-white pb-2">
+            <h1 className="text-2xl md:text-6xl font-bold tracking-tight text-on-surface pb-2">
               Tidal Downloader Web
             </h1>
             <p className="text-sm md:text-xl text-on-surface-variant max-w-lg mx-auto leading-relaxed">
               Next Generation Downloader for Tidal
             </p>
             {api.isServerless() && (
-              <span className="inline-flex items-center px-3 py-1 text-xs font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
+              <span className="inline-flex items-center px-3 py-1 text-xs font-medium bg-[#303030] dark:bg-secondary-container text-white dark:text-on-secondary-container rounded-lg shadow-sm">
                 Serverless
               </span>
             )}
@@ -328,6 +383,10 @@ export default function Home() {
           <div className="flex justify-center items-center gap-2 text-sm font-medium text-primary">
             <Link href="/faq" className="hover:underline">
               Faq
+            </Link>
+            <span>|</span>
+            <Link href="/privacy" className="hover:underline">
+              Privacy
             </Link>
             {totalDownloads > 0 && (
               <>

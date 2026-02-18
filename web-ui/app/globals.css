@@ -1,7 +1,60 @@
 @import "tailwindcss";
 
+/* ========================================
+   Light Mode (User Customized)
+   ======================================== */
 :root {
-  /* Material 3 Dark Theme Colors - Customized */
+  /* Core Colors */
+  --md-sys-color-background: #ffffff;
+  --md-sys-color-on-background: #1D1B20;
+  --md-sys-color-surface: #ffffff;
+  --md-sys-color-on-surface: #1D1B20;
+  --md-sys-color-primary: #303030;
+  /* Used for buttons/badges/profiles in light mode requests */
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e5e5e5;
+  /* Active download section / URL input */
+  --md-sys-color-on-primary-container: #1D1B20;
+
+  /* Secondary / Variants */
+  --md-sys-color-secondary: #303030;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #e5e5e5;
+  --md-sys-color-on-secondary-container: #1D1B20;
+
+  --md-sys-color-surface-variant: #e5e5e5;
+  --md-sys-color-on-surface-variant: #1D1B20;
+
+  --md-sys-color-outline: #79747E;
+  --md-sys-color-outline-variant: #CAC4D0;
+
+  /* Surface Containers (Cards/Dropdowns) */
+  --md-sys-color-surface-container: #ffffff;
+  /* Main card bg */
+  --md-sys-color-surface-container-high: #e5e5e5;
+  /* Input fields */
+  --md-sys-color-surface-container-highest: #d4d4d4;
+  /* Hover states */
+
+  /* Badges (Serverless/Idle) */
+  --md-sys-color-tertiary: #303030;
+  /* Badge bg */
+  --md-sys-color-on-tertiary: #ffffff;
+  /* Badge text */
+  --md-sys-color-tertiary-container: #303030;
+  --md-sys-color-on-tertiary-container: #ffffff;
+
+  /* Error */
+  --md-sys-color-error: #B3261E;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #F9DEDC;
+  --md-sys-color-on-error-container: #410E0B;
+}
+
+/* ========================================
+   Dark Mode
+   ======================================== */
+.dark {
   --md-sys-color-primary: #666666;
   --md-sys-color-on-primary: #ffffff;
   --md-sys-color-primary-container: #4F378B;
@@ -59,12 +112,37 @@
   --color-surface-container: var(--md-sys-color-surface-container);
   --color-surface-container-high: var(--md-sys-color-surface-container-high);
   --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
-  
+
   --font-roboto: var(--font-roboto);
+}
+
+/* ========================================
+   View Transition API for smooth theme switching
+   ======================================== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::view-transition-old(root) {
+  animation-name: none;
+}
+
+::view-transition-new(root) {
+  mix-blend-mode: normal;
 }
 
 body {
   background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-background);
   font-family: var(--font-roboto), sans-serif;
+}
+
+.icon-contrast {
+  color: #1D1B20 !important;
+}
+
+.dark .icon-contrast {
+  color: #ffffff !important;
 }
