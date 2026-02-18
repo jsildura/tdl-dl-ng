@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Activity, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { DownloadProgress, triggerSaveDialog } from "../lib/downloader";
 import { DownloadConsole } from "./DownloadConsole";
 

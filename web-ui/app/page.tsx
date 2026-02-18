@@ -10,7 +10,7 @@ import { api } from "../lib/api";
 import { DownloadProgress } from "../lib/downloader";
 import { TidalTrack, TidalAlbum, TidalPlaylist } from "../lib/tidal-client";
 import { addDownloadHistory, subscribeToDownloadHistory, incrementDownloadCount, subscribeToDownloadCount, DownloadHistoryItem } from "../lib/download-history";
-import { Menu, X, User, Sun, Moon } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
 import { useTheme } from "next-themes";
 
 interface AuthStatus {
@@ -34,7 +34,9 @@ export default function Home() {
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof document !== 'undefined' && (document as any).startViewTransition) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (document as any).startViewTransition(() => {
         setTheme(newTheme);
       });
