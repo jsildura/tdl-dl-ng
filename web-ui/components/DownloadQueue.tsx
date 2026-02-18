@@ -33,13 +33,13 @@ export function DownloadQueue({ progress, logs = [] }: DownloadQueueProps) {
     const isMultiTrack = progress?.totalTracks && progress.totalTracks > 1;
 
     return (
-        <div className="bg-[#e5e5e5] dark:bg-surface-container rounded-3xl p-6 shadow-md transition-shadow hover:shadow-lg">
+        <div className="bg-surface-container-high rounded-3xl p-6 shadow-md transition-shadow hover:shadow-lg">
             <div className="flex items-center justify-between mb-6">
                 <h3 className="text-base md:text-xl font-medium text-on-surface flex items-center gap-3">
                     Active Download
                 </h3>
                 <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary text-on-primary' : 'bg-[#303030] dark:bg-surface-container-highest text-white dark:text-on-surface-variant'}`}>
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${progress ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}`}>
                         {progress ? getStatusText() : 'Idle'}
                     </span>
                     {/* Resave button for mobile browsers that fail auto-download */}

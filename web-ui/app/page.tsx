@@ -295,7 +295,7 @@ export default function Home() {
               Next Generation Downloader for Tidal
             </p>
             {api.isServerless() && (
-              <span className="inline-flex items-center px-3 py-1 text-xs font-medium bg-[#303030] dark:bg-secondary-container text-white dark:text-on-secondary-container rounded-lg shadow-sm">
+              <span className="inline-flex items-center px-3 py-1 text-xs font-medium bg-secondary-container text-on-secondary-container rounded-lg shadow-sm">
                 Serverless
               </span>
             )}
